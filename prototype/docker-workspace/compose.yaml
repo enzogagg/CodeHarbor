@@ -1,0 +1,36 @@
+services:
+  workspace:
+    platform: linux/amd64
+
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+
+    container_name: codeharbor-ubuntu-x86-workspace
+
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      - ./workspace:/workspace
+      - vscode-data:/home/dev/.local/share/code-server
+      - vscode-config:/home/dev/.config/code-server
+      - shell-history:/command-history
+
+    environment:
+      PASSWORD: dev
+      DEFAULT_WORKSPACE: /workspace
+      HISTFILE: /command-history/.bash_history
+
+    working_dir: /workspace
+    init: true
+    tty: true
+
+volumes:
+  vscode-data:
+  vscode-config:
+  shell-history:

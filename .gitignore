@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Frontend builds
+dist/
+build/
+.vite/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Local application data
+data/
+.codeharbor/
+*.sqlite
+*.sqlite3
+*.db
+
+# Docker local overrides
+compose.override.yaml
+docker-compose.override.yml
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# Test coverage
+coverage/
+
+# Local worktrees
+.worktrees/
+worktrees/
