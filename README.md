@@ -18,7 +18,36 @@ Your local harbor for containerized development environments.
 - Open a browser-based IDE or an interactive terminal
 - Generate reusable Docker Compose configurations
 
-## Prototype
+## Desktop App
+
+CodeHarbor now includes a Tauri desktop MVP that controls the Docker prototype.
+
+### Install Dependencies
+
+```bash
+npm install
+```
+
+### Run Frontend Build Check
+
+```bash
+npm run build
+```
+
+### Run The Desktop App
+
+```bash
+npm run tauri:dev
+```
+
+Use the app buttons to:
+
+- Verify Docker availability
+- Start the Ubuntu AMD64 workspace
+- Stop the workspace
+- Open the browser IDE
+
+## Docker Prototype
 
 The current prototype lives in `prototype/docker-workspace/`.
 
@@ -82,7 +111,7 @@ docker compose down
 
 ## Project Status
 
-CodeHarbor is in early development. The Docker prototype is the first runnable milestone; the desktop application skeleton is intentionally lightweight.
+CodeHarbor is in early development. The Docker prototype is runnable, and the Tauri desktop MVP can start, stop and open the prototype workspace.
 
 ## License
 
