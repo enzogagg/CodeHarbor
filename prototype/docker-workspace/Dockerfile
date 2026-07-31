@@ -5,16 +5,29 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     build-essential \
     ca-certificates \
+    clang \
+    clang-format \
+    cmake \
     curl \
+    file \
+    g++ \
+    gcc \
+    gdb \
+    gcovr \
     git \
     gnupg \
+    lcov \
     nano \
     openssh-client \
+    pkg-config \
     python3 \
     python3-pip \
     python3-venv \
+    strace \
     sudo \
+    tree \
     unzip \
+    valgrind \
     wget \
     && rm -rf /var/lib/apt/lists/*
 

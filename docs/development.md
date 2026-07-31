@@ -20,7 +20,45 @@ npm install
 npm run tauri:dev
 ```
 
-The app can verify Docker, start the prototype workspace, stop it and open code-server at `http://localhost:8080`.
+The app can verify Docker, start the Epitech C/C++ prototype workspace, stop it, open code-server at `http://localhost:8080`, and run evaluation commands.
+
+## Epitech Evaluation Flow
+
+1. Create an environment from a local student project folder or a Git URL.
+2. Start the desktop app with `npm run tauri:dev`.
+3. Click `Démarrer` to build and start the Ubuntu AMD64 container.
+4. Click `Build` to run `make` in `/workspace`.
+5. Click `Tests` to run `make tests_run` in `/workspace`.
+6. Click `Valgrind` to run Valgrind when a single executable can be detected.
+7. Click `Clean` to run `make fclean` and `make clean` when available.
+
+The output panel shows the full command result returned by Docker Compose.
+
+## Local Folder Sync
+
+The main workflow is direct Docker volume mounting:
+
+```text
+/Users/me/Dev/student-project:/workspace
+```
+
+Code on macOS with your usual editor. Compile and execute in Ubuntu through CodeHarbor.
+
+## Git Import
+
+When a Git URL is provided, CodeHarbor runs `git clone` and stores the project in:
+
+```text
+~/.codeharbor/projects/<environment-id>/
+```
+
+It then generates environment files in:
+
+```text
+~/.codeharbor/environments/<environment-id>/
+```
+
+This first version uses your existing local Git authentication. There is no GitHub OAuth yet.
 
 ## Build Checks
 
@@ -41,6 +79,17 @@ docker compose up --build -d
 ```
 
 Open `http://localhost:8080` and sign in with password `dev`.
+
+## Verify Evaluation Tools
+
+Inside code-server or with `docker compose exec`, verify:
+
+```bash
+gcc --version
+g++ --version
+make --version
+valgrind --version
+```
 
 ## Validate Compose
 
