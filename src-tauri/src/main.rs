@@ -15,12 +15,22 @@ fn prototype_dir_from_root(root: &Path) -> Result<PathBuf, String> {
 }
 
 fn repo_root() -> Result<PathBuf, String> {
-    std::env::current_dir()
+    repo_root_from_current_dir(&std::env::current_dir()
         .map_err(|error| format!("Impossible de lire le dossier courant: {error}"))?
-        .parent()
-        .and_then(Path::parent)
+    )
+}
+
+fn repo_root_from_current_dir(current_dir: &Path) -> Result<PathBuf, String> {
+    current_dir
+        .ancestors()
+        .find(|candidate| candidate.join("prototype").join("docker-workspace").is_dir())
         .map(Path::to_path_buf)
-        .ok_or_else(|| "Impossible de résoudre la racine du projet".to_string())
+        .ok_or_else(|| {
+            format!(
+                "Impossible de résoudre la racine du projet depuis {}",
+                current_dir.display()
+            )
+        })
 }
 
 fn format_command_result(
@@ -120,7 +130,7 @@ fn open_ide() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_command_result, prototype_dir_from_root};
+    use super::{format_command_result, prototype_dir_from_root, repo_root_from_current_dir};
 
     #[test]
     fn resolves_existing_prototype_directory() {
@@ -156,6 +166,25 @@ mod tests {
         let message = format_command_result("docker compose", false, "", "daemon unavailable");
 
         assert_eq!(message, Err("docker compose a échoué: daemon unavailable".into()));
+    }
+
+    #[test]
+    fn resolves_repo_root_from_tauri_working_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "codeharbor-root-test-{}",
+            std::process::id()
+        ));
+        let src_tauri = root.join("src-tauri");
+        let prototype = root.join("prototype").join("docker-workspace");
+
+        std::fs::create_dir_all(&src_tauri).expect("create src-tauri dir");
+        std::fs::create_dir_all(&prototype).expect("create prototype dir");
+
+        let resolved = repo_root_from_current_dir(&src_tauri).expect("repo root should resolve");
+
+        assert_eq!(resolved, root);
+
+        std::fs::remove_dir_all(resolved).expect("clean temp dir");
     }
 }
 
