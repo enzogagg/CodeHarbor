@@ -32,63 +32,99 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <section className="hero-panel" aria-labelledby="app-title">
-        <div className="brand-mark" aria-hidden="true">
-          CH
-        </div>
-
-        <div className="hero-copy">
-          <p className="eyebrow">Local container harbor</p>
-          <h1 id="app-title">CodeHarbor</h1>
-          <p className="lede">
-            Lance un environnement Ubuntu AMD64 isolé avec code-server, monté sur ton Mac et piloté depuis une app desktop.
-          </p>
-        </div>
-      </section>
-
-      <section className="workspace-card" aria-labelledby="workspace-title">
-        <div className="card-header">
+    <main className="app-frame">
+      <aside className="sidebar" aria-label="CodeHarbor navigation">
+        <div className="sidebar-brand">
+          <div className="app-icon" aria-hidden="true">
+            C
+          </div>
           <div>
-            <p className="card-kicker">Workspace prototype</p>
+            <h1>CodeHarbor</h1>
+            <p>Docker workspaces</p>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <p className="sidebar-label">Status</p>
+          <div className="status-row">
+            <span className="status-dot" aria-hidden="true" />
+            <span>Local Docker</span>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <p className="sidebar-label">Workspaces</p>
+          <button className="workspace-nav-item active" type="button">
+            <span className="workspace-glyph" aria-hidden="true">▣</span>
+            <span>
+              <strong>Ubuntu AMD64</strong>
+              <small>code-server · 8080</small>
+            </span>
+          </button>
+        </div>
+      </aside>
+
+      <section className="content" aria-labelledby="workspace-title">
+        <header className="topbar">
+          <div>
+            <p className="breadcrumb">Prototype workspace</p>
             <h2 id="workspace-title">Ubuntu AMD64 Workspace</h2>
+            <p className="summary">
+              Environnement Ubuntu 24.04 x86_64 avec code-server, monté dans <code>/workspace</code>.
+            </p>
           </div>
-          <span className="status-pill">Ubuntu 24.04 · x86_64</span>
-        </div>
 
-        <div className="signal-grid" aria-label="Workspace details">
-          <div>
-            <span>IDE</span>
-            <strong>code-server</strong>
+          <div className="topbar-actions" aria-label="Workspace actions">
+            {actions.map((action) => (
+              <button
+                className={`action-button ${action.kind}`}
+                disabled={busyCommand !== null}
+                key={action.command}
+                onClick={() => runCommand(action.command)}
+                type="button"
+              >
+                {busyCommand === action.command ? "En cours..." : action.label}
+              </button>
+            ))}
           </div>
-          <div>
-            <span>Port</span>
-            <strong>8080</strong>
-          </div>
-          <div>
-            <span>Mount</span>
-            <strong>/workspace</strong>
-          </div>
-        </div>
+        </header>
 
-        <div className="actions" aria-label="Workspace actions">
-          {actions.map((action) => (
-            <button
-              className={`action-button ${action.kind}`}
-              disabled={busyCommand !== null}
-              key={action.command}
-              onClick={() => runCommand(action.command)}
-              type="button"
-            >
-              {busyCommand === action.command ? "En cours..." : action.label}
-            </button>
-          ))}
-        </div>
+        <section className="workspace-panel" aria-label="Workspace details">
+          <div className="panel-header">
+            <div>
+              <h3>Configuration</h3>
+              <p>Paramètres du prototype local utilisé par CodeHarbor.</p>
+            </div>
+            <span className="state-badge">Ready</span>
+          </div>
 
-        <div className={error ? "console-message error" : "console-message"} role="status">
-          <span className="console-prompt">codeharbor</span>
-          <p>{error ?? message}</p>
-        </div>
+          <dl className="detail-list">
+            <div>
+              <dt>Base image</dt>
+              <dd>Ubuntu 24.04</dd>
+            </div>
+            <div>
+              <dt>Architecture</dt>
+              <dd>x86_64 / linux amd64</dd>
+            </div>
+            <div>
+              <dt>IDE URL</dt>
+              <dd>http://localhost:8080</dd>
+            </div>
+            <div>
+              <dt>Workspace mount</dt>
+              <dd>/workspace</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className={error ? "output-panel error" : "output-panel"} aria-label="Command output">
+          <div className="output-titlebar">
+            <span>Output</span>
+            <code>codeharbor</code>
+          </div>
+          <p role="status">{error ?? message}</p>
+        </section>
       </section>
     </main>
   );
