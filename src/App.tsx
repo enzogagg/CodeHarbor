@@ -14,6 +14,7 @@ type EnvironmentConfig = {
 type CommandName =
   | "start_environment"
   | "stop_environment"
+  | "delete_environment"
   | "open_environment_ide"
   | "run_environment_build"
   | "run_environment_tests"
@@ -21,10 +22,11 @@ type CommandName =
   | "run_environment_clean"
   | "check_docker";
 
-const actions: Array<{ command: CommandName; label: string; kind: "primary" | "secondary"; needsEnvironment: boolean }> = [
+const actions: Array<{ command: CommandName; label: string; kind: "primary" | "secondary" | "destructive"; needsEnvironment: boolean }> = [
   { command: "check_docker", label: "Vérifier Docker", kind: "secondary", needsEnvironment: false },
   { command: "start_environment", label: "Démarrer", kind: "primary", needsEnvironment: true },
   { command: "stop_environment", label: "Arrêter", kind: "secondary", needsEnvironment: true },
+  { command: "delete_environment", label: "Supprimer", kind: "destructive", needsEnvironment: true },
   { command: "open_environment_ide", label: "Ouvrir IDE", kind: "secondary", needsEnvironment: true },
   { command: "run_environment_build", label: "Build", kind: "secondary", needsEnvironment: true },
   { command: "run_environment_tests", label: "Tests", kind: "secondary", needsEnvironment: true },
@@ -74,6 +76,39 @@ function App() {
     } catch (caught) {
       setError(String(caught));
       setMessage("Création interrompue.");
+    } finally {
+      setBusyCommand(null);
+    }
+  }
+
+  async function deleteEnvironment() {
+    if (!selectedEnvironment) {
+      setError("Sélectionne un environnement avant de le supprimer.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Supprimer l'environnement ${selectedEnvironment.name} ?\n\nCodeHarbor supprimera seulement les fichiers générés de l'environnement. Le dossier projet sera conservé.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const deletedId = selectedEnvironment.id;
+    setBusyCommand("delete_environment");
+    setError(null);
+    setMessage("Suppression de l'environnement...");
+
+    try {
+      const response = await invoke<string>("delete_environment", { environmentId: deletedId });
+      const list = await invoke<EnvironmentConfig[]>("list_environments");
+      setEnvironments(list);
+      setSelectedId(list[0]?.id ?? null);
+      setMessage(response);
+    } catch (caught) {
+      setError(String(caught));
+      setMessage("Suppression interrompue.");
     } finally {
       setBusyCommand(null);
     }
@@ -180,7 +215,7 @@ function App() {
                 className={`action-button ${action.kind}`}
                 disabled={busyCommand !== null || (action.needsEnvironment && !selectedEnvironment)}
                 key={action.command}
-                onClick={() => runCommand(action.command)}
+                onClick={() => action.command === "delete_environment" ? deleteEnvironment() : runCommand(action.command)}
                 type="button"
               >
                 {busyCommand === action.command ? "En cours..." : action.label}

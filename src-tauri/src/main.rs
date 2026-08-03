@@ -260,6 +260,32 @@ fn run_environment_compose(environment_id: &str, command_name: &str, args: &[&st
     run_command(command_name, "docker", args, Some(&env_dir))
 }
 
+fn delete_environment_files(environment_id: &str, run_docker_cleanup: bool) -> Result<String, String> {
+    if environment_id.is_empty() || sanitize_environment_id(environment_id) != environment_id {
+        return Err("Identifiant d'environnement invalide".into());
+    }
+
+    let env_dir = environment_dir(environment_id)?;
+    if !env_dir.exists() {
+        return Ok(format!("Environnement {environment_id} supprimé."));
+    }
+
+    let compose_path = env_dir.join("compose.yaml");
+    if run_docker_cleanup && compose_path.is_file() {
+        run_command(
+            "docker compose down",
+            "docker",
+            &["compose", "down"],
+            Some(&env_dir),
+        )?;
+    }
+
+    fs::remove_dir_all(&env_dir)
+        .map_err(|error| format!("Impossible de supprimer {}: {error}", env_dir.display()))?;
+
+    Ok(format!("Environnement {environment_id} supprimé. Les fichiers projet sont conservés."))
+}
+
 fn run_environment_script(environment_id: &str, command_name: &str, script: &str) -> Result<String, String> {
     run_environment_compose(
         environment_id,
@@ -517,6 +543,11 @@ async fn stop_environment(environment_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn delete_environment(environment_id: String) -> Result<String, String> {
+    run_blocking_task(move || delete_environment_files(&environment_id, true)).await
+}
+
+#[tauri::command]
 async fn open_environment_ide(environment_id: String) -> Result<String, String> {
     run_blocking_task(move || {
         let config = read_environment_config(&environment_id)?;
@@ -558,7 +589,7 @@ async fn run_environment_valgrind(environment_id: String) -> Result<String, Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_yaml, format_command_result, prototype_dir_from_root, repo_root_from_current_dir, sanitize_environment_id, EnvironmentConfig};
+    use super::{compose_yaml, delete_environment_files, environment_dir, format_command_result, prototype_dir_from_root, repo_root_from_current_dir, sanitize_environment_id, EnvironmentConfig};
 
     #[test]
     fn resolves_existing_prototype_directory() {
@@ -621,6 +652,37 @@ mod tests {
     }
 
     #[test]
+    fn deleting_environment_files_removes_generated_env_and_keeps_workspace() {
+        let environment_id = format!("delete-test-{}", std::process::id());
+        let workspace = std::env::temp_dir().join(format!(
+            "codeharbor-workspace-{}",
+            std::process::id()
+        ));
+        let env_dir = environment_dir(&environment_id).expect("resolve environment dir");
+
+        std::fs::create_dir_all(&workspace).expect("create workspace dir");
+        std::fs::create_dir_all(&env_dir).expect("create environment dir");
+        std::fs::write(env_dir.join("compose.yaml"), "services: {}\n").expect("write compose file");
+        std::fs::write(workspace.join("main.c"), "int main(void) { return 0; }\n").expect("write workspace file");
+
+        let result = delete_environment_files(&environment_id, false).expect("delete environment");
+
+        assert!(result.contains(&environment_id));
+        assert!(!env_dir.exists());
+        assert!(workspace.exists());
+        assert!(workspace.join("main.c").exists());
+
+        std::fs::remove_dir_all(workspace).expect("clean workspace dir");
+    }
+
+    #[test]
+    fn deleting_environment_files_rejects_invalid_environment_id() {
+        let result = delete_environment_files("../outside", false);
+
+        assert_eq!(result, Err("Identifiant d'environnement invalide".into()));
+    }
+
+    #[test]
     fn resolves_repo_root_from_tauri_working_directory() {
         let root = std::env::temp_dir().join(format!(
             "codeharbor-root-test-{}",
@@ -680,6 +742,7 @@ fn main() {
             create_environment,
             start_environment,
             stop_environment,
+            delete_environment,
             open_environment_ide,
             run_environment_build,
             run_environment_tests,
