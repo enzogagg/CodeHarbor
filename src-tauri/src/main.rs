@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::net::TcpListener;
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct EnvironmentConfig {
@@ -13,6 +16,34 @@ struct EnvironmentConfig {
     container_path: String,
     ide_port: u16,
     created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct EnvironmentRuntimeStatus {
+    environment_id: String,
+    status: String,
+    container_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct EvaluationRunRecord {
+    id: String,
+    command: String,
+    label: String,
+    started_at: u64,
+    duration_ms: u128,
+    success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct ProjectInspection {
+    has_makefile: bool,
+    make_targets: Vec<String>,
+    language_counts: BTreeMap<String, usize>,
+    executables: Vec<String>,
+    artifacts: Vec<String>,
 }
 
 fn prototype_dir_from_root(root: &Path) -> Result<PathBuf, String> {
@@ -92,6 +123,92 @@ fn environment_config_path(environment_id: &str) -> Result<PathBuf, String> {
     Ok(environment_dir(environment_id)?.join("config.json"))
 }
 
+fn history_dir(environment_id: &str) -> Result<PathBuf, String> {
+    Ok(environment_dir(environment_id)?.join("history"))
+}
+
+fn write_history_record(environment_id: &str, record: &EvaluationRunRecord) -> Result<(), String> {
+    let dir = history_dir(environment_id)?;
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Impossible de créer {}: {error}", dir.display()))?;
+    let path = dir.join(format!("{}.json", record.id));
+    let json = serde_json::to_string_pretty(record)
+        .map_err(|error| format!("Impossible de sérialiser l'historique: {error}"))?;
+    fs::write(&path, json)
+        .map_err(|error| format!("Impossible d'écrire {}: {error}", path.display()))
+}
+
+fn read_history_records(environment_id: &str) -> Result<Vec<EvaluationRunRecord>, String> {
+    let dir = history_dir(environment_id)?;
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut records = Vec::new();
+    for entry in fs::read_dir(&dir)
+        .map_err(|error| format!("Impossible de lire {}: {error}", dir.display()))?
+    {
+        let entry = entry.map_err(|error| format!("Entrée d'historique invalide: {error}"))?;
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) == Some("json") {
+            let data = fs::read_to_string(&path)
+                .map_err(|error| format!("Impossible de lire {}: {error}", path.display()))?;
+            records.push(serde_json::from_str::<EvaluationRunRecord>(&data).map_err(|error| {
+                format!("Historique invalide {}: {error}", path.display())
+            })?);
+        }
+    }
+
+    records.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    Ok(records)
+}
+
+fn container_name(environment_id: &str) -> String {
+    format!("codeharbor-{environment_id}")
+}
+
+fn environment_status_from_docker_status(status: &str) -> String {
+    let status = status.trim();
+    if status.is_empty() {
+        "not_created".into()
+    } else if status.starts_with("Up ") {
+        "running".into()
+    } else {
+        "stopped".into()
+    }
+}
+
+fn select_available_port(
+    start_port: u16,
+    used_ports: &[u16],
+    is_available: impl Fn(u16) -> bool,
+) -> Result<u16, String> {
+    (start_port..9000)
+        .find(|port| !used_ports.contains(port) && is_available(*port))
+        .ok_or_else(|| "Aucun port IDE libre entre 8080 et 8999".into())
+}
+
+fn is_local_port_available(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+fn next_available_ide_port(exclude_environment_id: Option<&str>) -> Result<u16, String> {
+    let used_ports = list_environment_configs()?
+        .into_iter()
+        .filter(|config| Some(config.id.as_str()) != exclude_environment_id)
+        .map(|config| config.ide_port)
+        .collect::<Vec<_>>();
+
+    select_available_port(8080, &used_ports, is_local_port_available)
+}
+
+fn write_environment_config(config: &EnvironmentConfig) -> Result<(), String> {
+    let path = environment_config_path(&config.id)?;
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|error| format!("Impossible de sérialiser config.json: {error}"))?;
+    fs::write(&path, json).map_err(|error| format!("Impossible d'écrire {}: {error}", path.display()))
+}
+
 fn compose_yaml(config: &EnvironmentConfig) -> String {
     format!(
         r#"services:
@@ -160,10 +277,7 @@ fn write_environment_files(config: &EnvironmentConfig) -> Result<(), String> {
     fs::write(env_dir.join("compose.yaml"), compose_yaml(config))
         .map_err(|error| format!("Impossible d'écrire compose.yaml: {error}"))?;
 
-    let json = serde_json::to_string_pretty(config)
-        .map_err(|error| format!("Impossible de sérialiser config.json: {error}"))?;
-    fs::write(env_dir.join("config.json"), json)
-        .map_err(|error| format!("Impossible d'écrire config.json: {error}"))?;
+    write_environment_config(config)?;
 
     Ok(())
 }
@@ -241,6 +355,145 @@ else \
 fi"#
 }
 
+fn valgrind_target_script(target_path: &str) -> String {
+    format!(
+        "cd /workspace && valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./{}",
+        target_path.replace('"', "\\\"")
+    )
+}
+
+fn validate_workspace_relative_path(path: &str) -> Result<(), String> {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty() || path.is_absolute() {
+        return Err("Chemin de binaire invalide".into());
+    }
+
+    if path.components().any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
+        return Err("Chemin de binaire invalide".into());
+    }
+
+    Ok(())
+}
+
+fn relative_display_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false);
+    }
+
+    #[cfg(not(unix))]
+    {
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.eq_ignore_ascii_case("exe"))
+            .unwrap_or(false)
+    }
+}
+
+fn collect_project_files(root: &Path, current: &Path, depth: usize, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    if depth > 4 {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(current)
+        .map_err(|error| format!("Impossible de lire {}: {error}", current.display()))?
+    {
+        let entry = entry.map_err(|error| format!("Entrée projet invalide: {error}"))?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == ".git" || name == "node_modules" || name == "target" {
+            continue;
+        }
+
+        if path.is_dir() {
+            collect_project_files(root, &path, depth + 1, files)?;
+        } else if path.is_file() {
+            files.push(path);
+        }
+    }
+
+    let _ = root;
+    Ok(())
+}
+
+fn make_targets(makefile: &Path) -> Vec<String> {
+    let Ok(content) = fs::read_to_string(makefile) else {
+        return Vec::new();
+    };
+
+    let mut targets = Vec::new();
+    for line in content.lines() {
+        if line.starts_with('\t') || line.starts_with(' ') || line.starts_with('#') {
+            continue;
+        }
+        if let Some((target, _)) = line.split_once(':') {
+            let target = target.trim();
+            if !target.is_empty() && target.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
+                targets.push(target.to_string());
+            }
+        }
+    }
+    targets.sort();
+    targets.dedup();
+    targets
+}
+
+fn detect_project(root: &Path) -> Result<ProjectInspection, String> {
+    if !root.is_dir() {
+        return Err(format!("Dossier projet introuvable: {}", root.display()));
+    }
+
+    let makefile = root.join("Makefile");
+    let mut files = Vec::new();
+    collect_project_files(root, root, 0, &mut files)?;
+
+    let mut language_counts = BTreeMap::new();
+    let mut executables = Vec::new();
+    let mut artifacts = Vec::new();
+
+    for file in files {
+        let relative = relative_display_path(root, &file);
+        if let Some(extension) = file.extension().and_then(|extension| extension.to_str()).map(str::to_lowercase) {
+            match extension.as_str() {
+                "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" | "js" | "ts" | "py" | "rs" => {
+                    *language_counts.entry(extension.clone()).or_insert(0) += 1;
+                }
+                "gcov" | "gcda" | "gcno" | "log" => artifacts.push(relative.clone()),
+                _ => {}
+            }
+        }
+
+        if is_executable_file(&file) {
+            executables.push(relative);
+        }
+    }
+
+    executables.sort();
+    artifacts.sort();
+
+    Ok(ProjectInspection {
+        has_makefile: makefile.is_file(),
+        make_targets: if makefile.is_file() { make_targets(&makefile) } else { Vec::new() },
+        language_counts,
+        executables,
+        artifacts,
+    })
+}
+
 fn run_workspace_script(command_name: &str, script: &str) -> Result<String, String> {
     let root = repo_root()?;
     let prototype_dir = prototype_dir_from_root(&root)?;
@@ -258,6 +511,23 @@ fn run_environment_compose(environment_id: &str, command_name: &str, args: &[&st
     let env_dir = environment_dir(&config.id)?;
 
     run_command(command_name, "docker", args, Some(&env_dir))
+}
+
+fn environment_runtime_status(config: &EnvironmentConfig) -> EnvironmentRuntimeStatus {
+    let name = container_name(&config.id);
+    let docker_status = run_command(
+        "docker ps",
+        "docker",
+        &["ps", "-a", "--filter", &format!("name=^/{name}$"), "--format", "{{.Status}}"],
+        None,
+    )
+    .unwrap_or_default();
+
+    EnvironmentRuntimeStatus {
+        environment_id: config.id.clone(),
+        status: environment_status_from_docker_status(&docker_status),
+        container_name: name,
+    }
 }
 
 fn delete_environment_files(environment_id: &str, run_docker_cleanup: bool) -> Result<String, String> {
@@ -292,6 +562,44 @@ fn run_environment_script(environment_id: &str, command_name: &str, script: &str
         command_name,
         &["compose", "exec", "-T", "workspace", "bash", "-lc", script],
     )
+}
+
+fn run_recorded_environment_script(
+    environment_id: &str,
+    command: &str,
+    label: &str,
+    script: &str,
+) -> Result<String, String> {
+    let started_at = created_at_now()?;
+    let start = Instant::now();
+    let result = run_environment_script(environment_id, label, script);
+    let duration_ms = start.elapsed().as_millis();
+
+    let record = match &result {
+        Ok(stdout) => EvaluationRunRecord {
+            id: format!("{started_at}-{command}-{}", std::process::id()),
+            command: command.into(),
+            label: label.into(),
+            started_at,
+            duration_ms,
+            success: true,
+            stdout: stdout.clone(),
+            stderr: String::new(),
+        },
+        Err(error) => EvaluationRunRecord {
+            id: format!("{started_at}-{command}-{}", std::process::id()),
+            command: command.into(),
+            label: label.into(),
+            started_at,
+            duration_ms,
+            success: false,
+            stdout: String::new(),
+            stderr: error.clone(),
+        },
+    };
+    write_history_record(environment_id, &record)?;
+
+    result
 }
 
 async fn run_blocking_task<T>(task: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String>
@@ -337,6 +645,71 @@ async fn list_environments() -> Result<Vec<EnvironmentConfig>, String> {
 
         environments.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         Ok(environments)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn list_environment_statuses() -> Result<Vec<EnvironmentRuntimeStatus>, String> {
+    run_blocking_task(|| {
+        Ok(list_environment_configs()?
+            .iter()
+            .map(environment_runtime_status)
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn run_diagnostics() -> Result<String, String> {
+    run_blocking_task(|| {
+        let docker = run_command("docker --version", "docker", &["--version"], None)
+            .unwrap_or_else(|error| error);
+        let environments = list_environment_configs()?.len();
+        let port_1420 = run_command(
+            "port 1420",
+            "lsof",
+            &["-nP", "-iTCP:1420", "-sTCP:LISTEN"],
+            None,
+        )
+        .unwrap_or_else(|_| "Port dev 1420 libre.".into());
+
+        Ok(format!(
+            "Docker: {docker}\nEnvironnements: {environments}\nDev server: {port_1420}"
+        ))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn inspect_project(environment_id: String) -> Result<ProjectInspection, String> {
+    run_blocking_task(move || {
+        let config = read_environment_config(&environment_id)?;
+        detect_project(Path::new(&config.host_path))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn show_environment_docker_logs(environment_id: String) -> Result<String, String> {
+    run_blocking_task(move || {
+        run_environment_compose(
+            &environment_id,
+            "docker compose logs",
+            &["compose", "logs", "--tail=200"],
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn show_environment_compose_config(environment_id: String) -> Result<String, String> {
+    run_blocking_task(move || {
+        run_environment_compose(
+            &environment_id,
+            "docker compose config",
+            &["compose", "config"],
+        )
     })
     .await
 }
@@ -399,14 +772,13 @@ async fn create_environment(
             clone_path
         };
 
-        let existing_count = list_environment_configs()?.len();
         let config = EnvironmentConfig {
             id,
             name: name.trim().to_string(),
             profile: "epitech-cpp".into(),
             host_path: final_host_path.to_string_lossy().to_string(),
             container_path: "/workspace".into(),
-            ide_port: 8080 + existing_count as u16,
+            ide_port: next_available_ide_port(None)?,
             created_at: created_at_now()?,
         };
 
@@ -518,6 +890,12 @@ fn list_environment_configs() -> Result<Vec<EnvironmentConfig>, String> {
 #[tauri::command]
 async fn start_environment(environment_id: String) -> Result<String, String> {
     run_blocking_task(move || {
+        let mut config = read_environment_config(&environment_id)?;
+        if !is_local_port_available(config.ide_port) {
+            config.ide_port = next_available_ide_port(Some(&environment_id))?;
+            write_environment_files(&config)?;
+        }
+
         run_environment_compose(
             &environment_id,
             "docker compose up",
@@ -548,6 +926,11 @@ async fn delete_environment(environment_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn list_evaluation_history(environment_id: String) -> Result<Vec<EvaluationRunRecord>, String> {
+    run_blocking_task(move || read_history_records(&environment_id)).await
+}
+
+#[tauri::command]
 async fn open_environment_ide(environment_id: String) -> Result<String, String> {
     run_blocking_task(move || {
         let config = read_environment_config(&environment_id)?;
@@ -568,28 +951,61 @@ async fn open_environment_ide(environment_id: String) -> Result<String, String> 
 }
 
 #[tauri::command]
+async fn open_environment_folder(environment_id: String) -> Result<String, String> {
+    run_blocking_task(move || {
+        let config = read_environment_config(&environment_id)?;
+
+        #[cfg(target_os = "macos")]
+        let result = run_command("open folder", "open", &[config.host_path.as_str()], None);
+
+        #[cfg(target_os = "windows")]
+        let result = run_command("open folder", "explorer", &[config.host_path.as_str()], None);
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let result = run_command("open folder", "xdg-open", &[config.host_path.as_str()], None);
+
+        result.map(|_| format!("Dossier ouvert: {}", config.host_path))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn run_environment_build(environment_id: String) -> Result<String, String> {
-    run_blocking_task(move || run_environment_script(&environment_id, "make", build_script())).await
+    run_blocking_task(move || run_recorded_environment_script(&environment_id, "build", "make", build_script())).await
 }
 
 #[tauri::command]
 async fn run_environment_tests(environment_id: String) -> Result<String, String> {
-    run_blocking_task(move || run_environment_script(&environment_id, "make tests_run", tests_script())).await
+    run_blocking_task(move || run_recorded_environment_script(&environment_id, "tests", "make tests_run", tests_script())).await
 }
 
 #[tauri::command]
 async fn run_environment_clean(environment_id: String) -> Result<String, String> {
-    run_blocking_task(move || run_environment_script(&environment_id, "make clean", clean_script())).await
+    run_blocking_task(move || run_recorded_environment_script(&environment_id, "clean", "make clean", clean_script())).await
 }
 
 #[tauri::command]
 async fn run_environment_valgrind(environment_id: String) -> Result<String, String> {
-    run_blocking_task(move || run_environment_script(&environment_id, "valgrind", valgrind_script())).await
+    run_blocking_task(move || run_recorded_environment_script(&environment_id, "valgrind", "valgrind", valgrind_script())).await
+}
+
+#[tauri::command]
+async fn run_environment_valgrind_target(environment_id: String, target_path: String) -> Result<String, String> {
+    run_blocking_task(move || {
+        validate_workspace_relative_path(&target_path)?;
+        run_recorded_environment_script(
+            &environment_id,
+            "valgrind",
+            &format!("valgrind {target_path}"),
+            &valgrind_target_script(&target_path),
+        )
+    })
+    .await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_yaml, delete_environment_files, environment_dir, format_command_result, prototype_dir_from_root, repo_root_from_current_dir, sanitize_environment_id, EnvironmentConfig};
+    use super::{compose_yaml, container_name, delete_environment_files, detect_project, environment_dir, environment_status_from_docker_status, format_command_result, prototype_dir_from_root, read_history_records, repo_root_from_current_dir, sanitize_environment_id, select_available_port, validate_workspace_relative_path, write_history_record, EnvironmentConfig, EvaluationRunRecord};
 
     #[test]
     fn resolves_existing_prototype_directory() {
@@ -630,6 +1046,103 @@ mod tests {
     #[test]
     fn sanitizes_environment_name_for_file_system_and_container_names() {
         assert_eq!(sanitize_environment_id("My FTP / Student #42"), "my-ftp-student-42");
+    }
+
+    #[test]
+    fn builds_stable_container_name_from_environment_id() {
+        assert_eq!(container_name("my-ftp"), "codeharbor-my-ftp");
+    }
+
+    #[test]
+    fn maps_docker_status_to_environment_status() {
+        assert_eq!(environment_status_from_docker_status("Up 3 minutes"), "running");
+        assert_eq!(environment_status_from_docker_status("Exited (0) 1 minute ago"), "stopped");
+        assert_eq!(environment_status_from_docker_status(""), "not_created");
+    }
+
+    #[test]
+    fn selects_first_free_ide_port_after_used_and_unavailable_ports() {
+        let selected = select_available_port(8080, &[8081], |port| port != 8080)
+            .expect("port should be selected");
+
+        assert_eq!(selected, 8082);
+    }
+
+    #[test]
+    fn reports_when_no_ide_port_is_available() {
+        let error = select_available_port(8999, &[], |_| false)
+            .expect_err("no port should be selected");
+
+        assert_eq!(error, "Aucun port IDE libre entre 8080 et 8999");
+    }
+
+    #[test]
+    fn writes_and_reads_history_records_newest_first() {
+        let environment_id = format!("history-test-{}", std::process::id());
+        let env_dir = environment_dir(&environment_id).expect("resolve env dir");
+        std::fs::create_dir_all(&env_dir).expect("create env dir");
+
+        let older = EvaluationRunRecord {
+            id: "older".into(),
+            command: "build".into(),
+            label: "make".into(),
+            started_at: 10,
+            duration_ms: 5,
+            success: true,
+            stdout: "ok".into(),
+            stderr: "".into(),
+        };
+        let newer = EvaluationRunRecord { id: "newer".into(), started_at: 20, ..older.clone() };
+
+        write_history_record(&environment_id, &older).expect("write older");
+        write_history_record(&environment_id, &newer).expect("write newer");
+
+        let records = read_history_records(&environment_id).expect("read records");
+
+        assert_eq!(records.iter().map(|record| record.id.as_str()).collect::<Vec<_>>(), vec!["newer", "older"]);
+
+        std::fs::remove_dir_all(env_dir).expect("clean env dir");
+    }
+
+    #[test]
+    fn rejects_unsafe_container_relative_paths() {
+        assert!(validate_workspace_relative_path("bin/my_binary").is_ok());
+        assert!(validate_workspace_relative_path("../secret").is_err());
+        assert!(validate_workspace_relative_path("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn detects_project_shape_and_artifacts() {
+        let root = std::env::temp_dir().join(format!("codeharbor-project-detect-{}", std::process::id()));
+        let binary = root.join("my_binary");
+
+        std::fs::create_dir_all(&root).expect("create project dir");
+        std::fs::write(root.join("Makefile"), "all:\n\tcc main.c\nclean:\n\trm -f my_binary\ntests_run:\n\ttrue\n").expect("write Makefile");
+        std::fs::write(root.join("main.c"), "int main(void) { return 0; }\n").expect("write C source");
+        std::fs::write(root.join("main.cpp"), "int main() { return 0; }\n").expect("write C++ source");
+        std::fs::write(root.join("main.gcov"), "coverage\n").expect("write artifact");
+        std::fs::write(&binary, "binary\n").expect("write binary");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&binary).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&binary, permissions).expect("set executable");
+        }
+
+        let inspection = detect_project(&root).expect("detect project");
+
+        assert!(inspection.has_makefile);
+        assert!(inspection.make_targets.contains(&"all".into()));
+        assert!(inspection.make_targets.contains(&"clean".into()));
+        assert!(inspection.make_targets.contains(&"tests_run".into()));
+        assert_eq!(inspection.language_counts.get("c"), Some(&1));
+        assert_eq!(inspection.language_counts.get("cpp"), Some(&1));
+        assert!(inspection.executables.contains(&"my_binary".into()));
+        assert!(inspection.artifacts.contains(&"main.gcov".into()));
+
+        std::fs::remove_dir_all(root).expect("clean project dir");
     }
 
     #[test]
@@ -739,16 +1252,29 @@ fn main() {
             run_clean,
             run_valgrind,
             list_environments,
+            list_environment_statuses,
+            run_diagnostics,
+            inspect_project,
+            show_environment_docker_logs,
+            show_environment_compose_config,
             create_environment,
             start_environment,
             stop_environment,
             delete_environment,
+            list_evaluation_history,
             open_environment_ide,
+            open_environment_folder,
             run_environment_build,
             run_environment_tests,
             run_environment_clean,
-            run_environment_valgrind
+            run_environment_valgrind,
+            run_environment_valgrind_target
         ])
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                window.app_handle().exit(0);
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running CodeHarbor");
 }
