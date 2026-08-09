@@ -422,6 +422,36 @@ h2 {
   border-bottom: 0;
 }
 
+.report-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--separator);
+  background: transparent;
+  color: var(--muted-strong);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.report-row:hover {
+  color: var(--text);
+}
+
+.report-row:last-child {
+  border-bottom: 0;
+}
+
+.report-row span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .docker-panel pre {
   max-height: 220px;
   overflow: auto;

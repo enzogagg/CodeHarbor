@@ -36,6 +36,13 @@ type ProjectInspection = {
   artifacts: string[];
 };
 
+type ReportFile = {
+  name: string;
+  path: string;
+  created_at: number;
+  size_bytes: number;
+};
+
 type CommandName =
   | "start_environment"
   | "stop_environment"
@@ -96,12 +103,13 @@ function App() {
   const [environments, setEnvironments] = useState<EnvironmentConfig[]>([]);
   const [runtimeStatuses, setRuntimeStatuses] = useState<Record<string, EnvironmentRuntimeStatus>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [busyCommand, setBusyCommand] = useState<CommandName | "create_environment" | null>(null);
+  const [busyCommand, setBusyCommand] = useState<CommandName | "create_environment" | "generate_evaluation_report" | "open_report_file" | "open_report_folder" | null>(null);
   const [message, setMessage] = useState("Crée ou sélectionne un environnement pour monter un projet Mac dans Ubuntu.");
   const [error, setError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [history, setHistory] = useState<EvaluationRunRecord[]>([]);
   const [inspection, setInspection] = useState<ProjectInspection | null>(null);
+  const [reports, setReports] = useState<ReportFile[]>([]);
   const [selectedValgrindTarget, setSelectedValgrindTarget] = useState("");
   const [dockerText, setDockerText] = useState("");
   const [name, setName] = useState("");
@@ -122,16 +130,19 @@ function App() {
     if (!environmentId) {
       setHistory([]);
       setInspection(null);
+      setReports([]);
       setSelectedValgrindTarget("");
       return;
     }
 
-    const [nextHistory, nextInspection] = await Promise.all([
+    const [nextHistory, nextInspection, nextReports] = await Promise.all([
       invoke<EvaluationRunRecord[]>("list_evaluation_history", { environmentId }),
       invoke<ProjectInspection>("inspect_project", { environmentId }),
+      invoke<ReportFile[]>("list_evaluation_reports", { environmentId }),
     ]);
     setHistory(nextHistory);
     setInspection(nextInspection);
+    setReports(nextReports);
     setSelectedValgrindTarget((current) => current || nextInspection.executables[0] || "");
   }
 
@@ -262,6 +273,62 @@ function App() {
       setDockerText(await invoke<string>(command, { environmentId: selectedEnvironment.id }));
     } catch (caught) {
       setDockerText(String(caught));
+    }
+  }
+
+  async function generateReport() {
+    if (!selectedEnvironment) {
+      setError("Sélectionne un environnement avant de générer un rapport.");
+      return;
+    }
+
+    setBusyCommand("generate_evaluation_report");
+    setError(null);
+    setMessage("Génération du rapport...");
+
+    try {
+      const report = await invoke<ReportFile>("generate_evaluation_report", { environmentId: selectedEnvironment.id });
+      await refreshEvaluation(selectedEnvironment.id);
+      setMessage(`Rapport généré: ${report.name}`);
+    } catch (caught) {
+      setError(String(caught));
+      setMessage("Export interrompu.");
+    } finally {
+      setBusyCommand(null);
+    }
+  }
+
+  async function openReport(reportName: string) {
+    if (!selectedEnvironment) {
+      return;
+    }
+
+    setBusyCommand("open_report_file");
+    setError(null);
+    try {
+      await invoke("open_report_file", { environmentId: selectedEnvironment.id, reportName });
+      setMessage(`Rapport ouvert: ${reportName}`);
+    } catch (caught) {
+      setError(String(caught));
+    } finally {
+      setBusyCommand(null);
+    }
+  }
+
+  async function openReportFolder() {
+    if (!selectedEnvironment) {
+      return;
+    }
+
+    setBusyCommand("open_report_folder");
+    setError(null);
+    try {
+      await invoke("open_report_folder", { environmentId: selectedEnvironment.id });
+      setMessage("Dossier des rapports ouvert.");
+    } catch (caught) {
+      setError(String(caught));
+    } finally {
+      setBusyCommand(null);
     }
   }
 
@@ -414,6 +481,24 @@ function App() {
                 <strong>{run.command}</strong>
                 <span>{run.success ? "OK" : "FAIL"} · {run.duration_ms}ms</span>
               </div>
+            ))}
+          </div>
+
+          <div className="mini-panel reports-panel">
+            <h3>Reports</h3>
+            <p>Export Markdown local basé sur l'historique, le projet et Docker.</p>
+            <div className="panel-actions">
+              <button className="action-button secondary" disabled={!selectedEnvironment || busyCommand !== null} onClick={generateReport} type="button">
+                {busyCommand === "generate_evaluation_report" ? "Génération..." : "Generate report"}
+              </button>
+              <button className="action-button secondary" disabled={!selectedEnvironment || reports.length === 0 || busyCommand !== null} onClick={() => openReport(reports[0].name)} type="button">Open latest</button>
+              <button className="action-button secondary" disabled={!selectedEnvironment || busyCommand !== null} onClick={openReportFolder} type="button">Open folder</button>
+            </div>
+            {reports.length === 0 ? <p>Aucun rapport généré.</p> : reports.slice(0, 5).map((report) => (
+              <button className="report-row" key={report.name} onClick={() => openReport(report.name)} type="button">
+                <strong>{report.name}</strong>
+                <span>{Math.max(1, Math.round(report.size_bytes / 1024))} KB</span>
+              </button>
             ))}
           </div>
 
