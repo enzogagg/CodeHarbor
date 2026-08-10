@@ -51,6 +51,14 @@ After installation, launch CodeHarbor from Finder, Spotlight, the Dock, or:
 open ~/Applications/CodeHarbor.app
 ```
 
+To remove only the installed macOS app bundle:
+
+```bash
+npm run mac:uninstall
+```
+
+Uninstalling the app does not delete `~/.codeharbor` projects, environments, Docker containers, or Docker volumes.
+
 ## Create An Environment
 
 Use a local project folder:

@@ -39,6 +39,12 @@ npm run mac:install
 
 Builds and installs `CodeHarbor.app` into `~/Applications` for normal macOS launching.
 
+```bash
+npm run mac:uninstall
+```
+
+Removes only `~/Applications/CodeHarbor.app`. It leaves `~/.codeharbor`, Docker containers, and Docker volumes untouched.
+
 ## Automated Verification
 
 Run the complete local validation suite:
@@ -82,6 +88,7 @@ Node script tests cover:
 - command runner success/failure behavior
 - macOS app bundle path resolution
 - `~/Applications/CodeHarbor.app` install target resolution
+- `~/Applications/CodeHarbor.app` uninstall target and safe removal behavior
 
 Frontend coverage in this batch is TypeScript and Vite build validation. There is no frontend unit test framework yet.
 

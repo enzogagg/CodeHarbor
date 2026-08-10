@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import codeharborLogo from "./assets/codeharbor-logo.svg";
 
 type EnvironmentConfig = {
   id: string;
@@ -336,7 +337,7 @@ function App() {
     <main className="app-frame">
       <aside className="sidebar" aria-label="CodeHarbor navigation">
         <div className="sidebar-brand">
-          <div className="app-icon" aria-hidden="true">C</div>
+          <img className="app-icon" src={codeharborLogo} alt="" aria-hidden="true" />
           <div>
             <h1>CodeHarbor</h1>
             <p>Docker workspaces</p>

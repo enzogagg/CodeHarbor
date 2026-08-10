@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">CodeHarbor app icon</title>
+  <desc id="desc">A night harbor mark with a lighthouse beam and code chevrons.</desc>
+  <defs>
+    <linearGradient id="sea" x1="128" y1="64" x2="896" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#143B5D"/>
+      <stop offset="0.5" stop-color="#071B2E"/>
+      <stop offset="1" stop-color="#03101F"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="384" y1="352" x2="820" y2="168" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#55D6FF" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#B8F3FF" stop-opacity="0.18"/>
+    </linearGradient>
+    <linearGradient id="harbor" x1="244" y1="232" x2="724" y2="812" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4FBFF"/>
+      <stop offset="1" stop-color="#A9D7E8"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <path d="M512 40C198 40 40 198 40 512s158 472 472 472 472-158 472-472S826 40 512 40Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <path d="M0 0h1024v1024H0z" fill="url(#sea)"/>
+    <path d="M430 348 888 172c26-10 48 20 32 43L660 590c-10 15-31 16-43 3L420 377c-9-10-4-24 10-29Z" fill="url(#beam)" opacity="0.95"/>
+    <path d="M112 754c98-48 174-48 272 0s174 48 272 0 174-48 272 0v270H112V754Z" fill="#06243A" opacity="0.82"/>
+    <path d="M96 826c110-54 190-54 300 0s190 54 300 0 190-54 300 0" fill="none" stroke="#23B4D8" stroke-width="26" stroke-linecap="round" opacity="0.38"/>
+    <path d="M120 900c100-42 178-42 278 0s178 42 278 0 178-42 278 0" fill="none" stroke="#E5FAFF" stroke-width="18" stroke-linecap="round" opacity="0.18"/>
+  </g>
+  <path d="M322 760h380l-46-82H368l-46 82Z" fill="#092238"/>
+  <path d="M390 678h244L602 378H422L390 678Z" fill="url(#harbor)"/>
+  <path d="M418 378h188l-24-94c-6-24-27-40-52-40h-36c-25 0-46 16-52 40l-24 94Z" fill="#EAF8FF"/>
+  <path d="M462 306h100v72H462z" fill="#092238"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M316 486 244 558l72 72" stroke="#55D6FF" stroke-width="54"/>
+    <path d="M708 486 780 558l-72 72" stroke="#55D6FF" stroke-width="54"/>
+    <path d="M548 476 476 650" stroke="#F6C85F" stroke-width="46"/>
+  </g>
+</svg>

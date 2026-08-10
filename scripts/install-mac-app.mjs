@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,14 @@ export async function installMacApp(projectRoot = root) {
   mkdirSync(applicationsDir, { recursive: true });
   rmSync(target, { recursive: true, force: true });
   cpSync(source, target, { recursive: true });
+  const now = new Date();
+  utimesSync(target, now, now);
+
+  const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+  if (existsSync(lsregister)) {
+    await runStep({ label: "Register CodeHarbor with LaunchServices", command: lsregister, args: ["-f", target] });
+  }
+  await runStep({ label: "Refresh macOS icon cache", command: "qlmanage", args: ["-r", "cache"] });
 
   console.log(`\nInstalled CodeHarbor at ${target}`);
   console.log("Launch it from Finder, Spotlight, Dock, or with: open ~/Applications/CodeHarbor.app");

@@ -13,6 +13,7 @@
     "tauri:dev": "npm run dev:clean && tauri dev",
     "tauri:build": "tauri build",
     "mac:install": "node scripts/install-mac-app.mjs",
+    "mac:uninstall": "node scripts/uninstall-mac-app.mjs",
     "test:scripts": "node --test scripts/*.test.mjs",
     "test:all": "node scripts/test-all.mjs",
     "prototype:config": "docker compose -f prototype/docker-workspace/compose.yaml config",
