@@ -1,12 +1,14 @@
-# Development
+# Development Guide
+
+This guide explains how to develop, test, and manually verify CodeHarbor.
 
 ## Requirements
 
 - macOS
-- Docker Desktop
+- Docker Desktop or a compatible Docker engine
 - Docker Compose v2
 - Node.js
-- Rust
+- Rust and Cargo
 
 ## Install Dependencies
 
@@ -14,107 +16,124 @@
 npm install
 ```
 
-## Run The Desktop App
+## Repository Structure
+
+- `src/`: React and TypeScript frontend.
+- `src-tauri/`: Rust/Tauri backend, commands, app configuration, and unit tests.
+- `prototype/docker-workspace/`: Ubuntu AMD64 Docker workspace prototype.
+- `scripts/`: local development, testing, and macOS install scripts.
+- `docs/superpowers/specs/`: design specs.
+- `docs/superpowers/plans/`: implementation plans.
+
+## Development Commands
 
 ```bash
 npm run tauri:dev
 ```
 
-The app can verify Docker, start the Epitech C/C++ prototype workspace, stop it, open code-server at `http://localhost:8080`, and run evaluation commands.
+Starts the app in development mode. The command first runs `scripts/clean-dev.mjs` to stop stale CodeHarbor/Tauri/Vite dev processes that can keep port `1420` busy.
 
-## Epitech Evaluation Flow
-
-1. Create an environment from a local student project folder or a Git URL.
-2. Start the desktop app with `npm run tauri:dev`.
-3. Click `Démarrer` to build and start the Ubuntu AMD64 container.
-4. Click `Build` to run `make` in `/workspace`.
-5. Click `Tests` to run `make tests_run` in `/workspace`.
-6. Click `Valgrind` to run Valgrind when a single executable can be detected.
-7. Click `Clean` to run `make fclean` and `make clean` when available.
-
-The output panel shows the full command result returned by Docker Compose.
-
-## Local Folder Sync
-
-The main workflow is direct Docker volume mounting:
-
-```text
-/Users/me/Dev/student-project:/workspace
+```bash
+npm run mac:install
 ```
 
-Code on macOS with your usual editor. Compile and execute in Ubuntu through CodeHarbor.
+Builds and installs `CodeHarbor.app` into `~/Applications` for normal macOS launching.
 
-## Git Import
+## Automated Verification
 
-When a Git URL is provided, CodeHarbor runs `git clone` and stores the project in:
+Run the complete local validation suite:
 
-```text
-~/.codeharbor/projects/<environment-id>/
+```bash
+npm run test:all
 ```
 
-It then generates environment files in:
+It runs, in order:
 
-```text
-~/.codeharbor/environments/<environment-id>/
-```
+1. `npm run build`
+2. `cargo test` in `src-tauri`
+3. `cargo check` in `src-tauri`
 
-This first version uses your existing local Git authentication. There is no GitHub OAuth yet.
-
-## Build Checks
+Run individual checks when iterating:
 
 ```bash
 npm run build
+npm run test:scripts
+cd src-tauri && cargo test
+cd src-tauri && cargo check
 ```
+
+## Automated Test Coverage
+
+Rust unit tests cover backend behavior including:
+
+- environment ID sanitization
+- Docker Compose generation
+- environment deletion safety
+- environment status mapping
+- IDE port selection
+- evaluation command scripts
+- history persistence
+- project inspection and artifact detection
+- safe Valgrind target validation
+- report file generation and report name validation
+
+Node script tests cover:
+
+- command runner success/failure behavior
+- macOS app bundle path resolution
+- `~/Applications/CodeHarbor.app` install target resolution
+
+Frontend coverage in this batch is TypeScript and Vite build validation. There is no frontend unit test framework yet.
+
+## Manual Verification Checklist
+
+Use this checklist when validating features that require Docker or macOS UI integration:
+
+1. Run `npm run tauri:dev`.
+2. Create an environment from a local folder.
+3. Create an environment from a Git URL if Git credentials are available.
+4. Start the environment and confirm Docker shows a `codeharbor-<id>` container.
+5. Open the IDE and confirm code-server loads.
+6. Run `Build`, `Tests`, `Clean`, and `Run Valgrind` on a sample Makefile project.
+7. Confirm `History`, `Artifacts`, and `Docker` panels update.
+8. Generate a Markdown report and open it from the app.
+9. Delete the environment and confirm the project folder remains.
+10. Run `npm run mac:install`, then launch `~/Applications/CodeHarbor.app` and confirm the app icon appears in the Dock and app switcher.
+
+## Troubleshooting
+
+### Port 1420 Is Already In Use
+
+Run:
 
 ```bash
-cd src-tauri
-cargo check
+npm run dev:clean
 ```
 
-## Run The Docker Prototype
+Then restart:
 
 ```bash
-cd prototype/docker-workspace
-docker compose up --build -d
+npm run tauri:dev
 ```
 
-Open `http://localhost:8080` and sign in with password `dev`.
+### Docker Port Conflicts
 
-## Verify Evaluation Tools
+CodeHarbor assigns IDE ports from `8080` upward and skips ports already in use. If Docker reports a bind conflict, stop the container using that port or create a new environment so CodeHarbor selects another free port.
 
-Inside code-server or with `docker compose exec`, verify:
+### Docker Is Not Available
+
+Start Docker Desktop or your Docker engine, then use the app's Docker or Diagnostics action.
+
+### macOS App Build Fails
+
+Run:
 
 ```bash
-gcc --version
-g++ --version
-make --version
-valgrind --version
+npm run tauri -- info
 ```
 
-## Validate Compose
+Confirm Tauri prerequisites are installed, then retry:
 
 ```bash
-cd prototype/docker-workspace
-docker compose config
-```
-
-## Stop The Docker Prototype
-
-```bash
-cd prototype/docker-workspace
-docker compose down
-```
-
-## Verify The Workspace Architecture
-
-After starting the workspace from the app or with Docker Compose, open `http://localhost:8080` and run:
-
-```bash
-uname -m
-```
-
-Expected result:
-
-```text
-x86_64
+npm run mac:install
 ```

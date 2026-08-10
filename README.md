@@ -1,61 +1,59 @@
 # CodeHarbor
 
-CodeHarbor is a local development environment manager powered by Docker.
+CodeHarbor is a macOS desktop app for creating and running Ubuntu AMD64 Docker workspaces from local folders or Git repositories. Its first workflow focuses on fair Epitech C/C++ project evaluation from an Apple Silicon or Intel Mac.
 
-It helps developers create, configure and run isolated development workspaces through a simple desktop application. The first profile targets Epitech C/C++ evaluation on Ubuntu AMD64 with code-server.
+## What It Does
 
-## Tagline
+- Creates one isolated Docker Compose environment per project.
+- Mounts the selected macOS project folder into the container as `/workspace`.
+- Forces the workspace platform to `linux/amd64` for reproducible Ubuntu evaluation.
+- Opens code-server in the browser for in-container editing and terminal access.
+- Runs common evaluation commands: Build, Tests, Clean, and Valgrind.
+- Records evaluation history and generates Markdown evaluation reports.
+- Keeps student/project files when deleting generated CodeHarbor environments.
 
-Your local harbor for containerized development environments.
+## Requirements
 
-## Goals
+- macOS
+- Docker Desktop or another Docker engine with Docker Compose v2
+- Node.js
+- Rust and Cargo
 
-- Create reproducible Docker-based development environments
-- Support AMD64 and ARM64 workspaces
-- Mount local project directories
-- Manage ports, volumes and environment variables
-- Start, stop and delete development environments
-- Open a browser-based IDE or an interactive terminal
-- Generate reusable Docker Compose configurations
-
-## Desktop App
-
-CodeHarbor now includes a Tauri desktop MVP that controls the Docker prototype.
-
-### Install Dependencies
+## Install Dependencies
 
 ```bash
 npm install
 ```
 
-### Run Frontend Build Check
-
-```bash
-npm run build
-```
-
-### Run The Desktop App
+## Run In Development
 
 ```bash
 npm run tauri:dev
 ```
 
-Use the app buttons to:
+The dev command cleans stale CodeHarbor/Tauri/Vite dev processes before starting the app.
 
-- Verify Docker availability
-- Start the Epitech C/C++ Ubuntu AMD64 workspace
-- Stop the workspace
-- Open the browser IDE
-- Run `make`
-- Run `make tests_run`
-- Run Valgrind against a detected executable
-- Clean generated files through Makefile targets
+## Install As A macOS App
 
-### Add An Environment
+```bash
+npm run mac:install
+```
 
-CodeHarbor can create an environment from either a local folder or a Git URL.
+This builds the Tauri app and installs it to:
 
-Local folder flow:
+```text
+~/Applications/CodeHarbor.app
+```
+
+After installation, launch CodeHarbor from Finder, Spotlight, the Dock, or:
+
+```bash
+open ~/Applications/CodeHarbor.app
+```
+
+## Create An Environment
+
+Use a local project folder:
 
 ```text
 Name: MyFTP
@@ -63,7 +61,7 @@ Local folder path: /Users/me/Dev/students/myftp
 Git URL optional: empty
 ```
 
-Git flow:
+Or clone from Git:
 
 ```text
 Name: MyFTP
@@ -71,105 +69,61 @@ Local folder path: empty
 Git URL optional: git@github.com:org/myftp.git
 ```
 
-Generated environments are stored in:
+Generated environment files live in:
 
 ```text
 ~/.codeharbor/environments/<environment-id>/
 ```
 
-Git clones are stored in:
+Git clones live in:
 
 ```text
 ~/.codeharbor/projects/<environment-id>/
 ```
 
-The selected project folder is mounted directly into the container as `/workspace`, so edits made on macOS are immediately visible inside Ubuntu.
+## Environment Actions
 
-## Epitech C/C++ Evaluation
+- `Démarrer`: builds and starts the Docker workspace.
+- `Arrêter`: stops the workspace.
+- `Ouvrir IDE`: opens code-server in the browser.
+- `Finder`: opens the project folder on macOS.
+- `Docker`: checks Docker availability.
+- `Diagnostics`: shows local diagnostics including Docker and dev port state.
+- `Supprimer`: deletes generated environment files after confirmation.
 
-The prototype workspace is designed to reduce macOS/Linux compatibility bias when evaluating student projects.
+Deleting an environment removes `~/.codeharbor/environments/<environment-id>/` but keeps the project folder or Git clone.
 
-It includes:
+## Evaluation Actions
 
-- `gcc` and `g++`
-- `make` and `cmake`
-- `gdb`, `valgrind` and `strace`
-- `clang` and `clang-format`
-- `gcovr` and `lcov`
-- `tree`, `file` and `pkg-config`
+- `Build`: runs `make` in `/workspace`.
+- `Tests`: runs `make tests_run` in `/workspace`.
+- `Clean`: runs `make fclean` and `make clean` when available.
+- `Run Valgrind`: runs Valgrind against the selected detected executable.
 
-Create an environment from a student project folder, start the workspace, then use the app actions:
+The Evaluation panels show:
 
-- `Build` runs `make`
-- `Tests` runs `make tests_run`
-- `Valgrind` tries to detect an executable and run Valgrind
-- `Clean` runs `make fclean` and `make clean` when available
+- `History`: recent recorded evaluation runs.
+- `Artifacts`: detected executables, coverage files, logs, and language counts.
+- `Docker`: recent Docker logs and Compose config.
+- `Reports`: local Markdown report generation and opening actions.
 
-## Docker Prototype
+## Reports
 
-The current prototype lives in `prototype/docker-workspace/`.
-
-It provides:
-
-- Ubuntu 24.04
-- AMD64 execution through Docker Desktop emulation on Apple Silicon
-- code-server exposed on `http://localhost:8080`
-- Git, C/C++ build tools, debug tools, Python, sudo, SSH client and common shell utilities
-- A local `workspace/` directory mounted to `/workspace`
-- Persistent code-server data and configuration volumes
-
-### Run The Prototype
-
-```bash
-cd prototype/docker-workspace
-docker compose up --build -d
-```
-
-Open:
+Generate reports from the `Reports` panel. Reports are written to:
 
 ```text
-http://localhost:8080
+~/.codeharbor/environments/<environment-id>/reports/
 ```
 
-Password:
+Reports include environment metadata, project inspection, evaluation history, command outputs, Valgrind entries, Docker config/logs, and manual review notes. They are supporting evidence, not an automated grade.
 
-```text
-dev
-```
-
-Verify the architecture inside the integrated terminal:
+## Validate The Project
 
 ```bash
-uname -m
+npm run test:all
 ```
 
-Expected result:
-
-```text
-x86_64
-```
-
-### Stop The Prototype
-
-```bash
-cd prototype/docker-workspace
-docker compose down
-```
-
-## Planned Stack
-
-- Tauri
-- React
-- TypeScript
-- Rust
-- Docker
-- Docker Compose
-- xterm.js
-- SQLite or JSON storage
-
-## Project Status
-
-CodeHarbor is in early development. The Docker prototype is runnable, and the Tauri desktop MVP can start, stop, open and run basic Epitech C/C++ evaluation commands inside the workspace.
+This runs the frontend build, Rust unit tests, and Rust compile check.
 
 ## License
 
