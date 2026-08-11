@@ -669,7 +669,12 @@ if [ "$count" = "0" ]; then \
 elif [ "$count" = "1" ]; then \
   target=$(printf '%s\n' "$executables" | sed '/^$/d' | head -n 1); \
   printf 'Valgrind target: %s\n' "$target"; \
-  timeout --preserve-status 15s xvfb-run -a valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes "$target"; \
+  timeout 15s xvfb-run -a valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes "$target"; \
+  status=$?; \
+  if [ "$status" = "124" ]; then \
+    printf 'Valgrind: timeout après 15s. Le programme semble interactif ou ne se termine pas seul.\n' >&2; \
+  fi; \
+  exit "$status"; \
 else \
   printf 'Valgrind: plusieurs exécutables possibles. Ouvre le terminal et lance valgrind sur le bon binaire:\n%s\n' "$executables"; \
 fi"#
@@ -677,7 +682,7 @@ fi"#
 
 fn valgrind_target_script(target_path: &str) -> String {
     format!(
-        "cd /workspace && timeout --preserve-status 15s xvfb-run -a valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./{}",
+        "cd /workspace && timeout 15s xvfb-run -a valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./{}; status=$?; if [ \"$status\" = \"124\" ]; then printf 'Valgrind: timeout après 15s. Le programme semble interactif ou ne se termine pas seul.\\n' >&2; fi; exit \"$status\"",
         target_path.replace('"', "\\\"")
     )
 }
@@ -2167,8 +2172,14 @@ mod tests {
 
         #[test]
         fn valgrind_scripts_have_runtime_timeout_for_interactive_programs() {
-            assert!(valgrind_script().contains("timeout --preserve-status 15s"));
-            assert!(valgrind_target_script("my_hunter").contains("timeout --preserve-status 15s"));
+            assert!(valgrind_script().contains("timeout 15s"));
+            assert!(valgrind_target_script("my_hunter").contains("timeout 15s"));
+        }
+
+        #[test]
+        fn valgrind_scripts_explain_timeout_failures() {
+            assert!(valgrind_script().contains("Valgrind: timeout après 15s"));
+            assert!(valgrind_target_script("my_hunter").contains("Valgrind: timeout après 15s"));
         }
     }
 }
