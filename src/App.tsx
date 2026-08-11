@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import codeharborLogo from "./assets/codeharbor-logo.svg";
 
@@ -55,6 +55,7 @@ type CommandName =
   | "run_environment_valgrind"
   | "run_environment_valgrind_target"
   | "run_environment_clean"
+  | "run_full_evaluation"
   | "run_diagnostics"
   | "check_docker";
 
@@ -110,14 +111,24 @@ function App() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [history, setHistory] = useState<EvaluationRunRecord[]>([]);
   const [inspection, setInspection] = useState<ProjectInspection | null>(null);
+  const [inspectionEnvironmentId, setInspectionEnvironmentId] = useState<string | null>(null);
   const [reports, setReports] = useState<ReportFile[]>([]);
+  const [evaluationEnvironmentId, setEvaluationEnvironmentId] = useState<string | null>(null);
   const [selectedValgrindTarget, setSelectedValgrindTarget] = useState("");
   const [dockerText, setDockerText] = useState("");
   const [name, setName] = useState("");
   const [hostPath, setHostPath] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
+  const evaluationRefreshId = useRef(0);
+  const selectedEnvironmentIdRef = useRef<string | null>(null);
 
   const selectedEnvironment = environments.find((environment) => environment.id === selectedId) ?? environments[0] ?? null;
+  selectedEnvironmentIdRef.current = selectedEnvironment?.id ?? null;
+  const activeInspection = selectedEnvironment && inspectionEnvironmentId === selectedEnvironment.id ? inspection : null;
+  const activeValgrindTarget = activeInspection?.executables.includes(selectedValgrindTarget) ? selectedValgrindTarget : "";
+  const hasActiveEvaluationData = selectedEnvironment !== null && evaluationEnvironmentId === selectedEnvironment.id;
+  const activeHistory = hasActiveEvaluationData ? history : [];
+  const activeReports = hasActiveEvaluationData ? reports : [];
 
   async function refreshEnvironments() {
     const list = await invoke<EnvironmentConfig[]>("list_environments");
@@ -128,10 +139,15 @@ function App() {
   }
 
   async function refreshEvaluation(environmentId = selectedEnvironment?.id) {
+    const refreshId = evaluationRefreshId.current + 1;
+    evaluationRefreshId.current = refreshId;
+
     if (!environmentId) {
       setHistory([]);
       setInspection(null);
+      setInspectionEnvironmentId(null);
       setReports([]);
+      setEvaluationEnvironmentId(null);
       setSelectedValgrindTarget("");
       return;
     }
@@ -141,10 +157,23 @@ function App() {
       invoke<ProjectInspection>("inspect_project", { environmentId }),
       invoke<ReportFile[]>("list_evaluation_reports", { environmentId }),
     ]);
+
+    if (refreshId !== evaluationRefreshId.current || environmentId !== selectedEnvironmentIdRef.current) {
+      return;
+    }
+
     setHistory(nextHistory);
     setInspection(nextInspection);
+    setInspectionEnvironmentId(environmentId);
     setReports(nextReports);
-    setSelectedValgrindTarget((current) => current || nextInspection.executables[0] || "");
+    setEvaluationEnvironmentId(environmentId);
+    setSelectedValgrindTarget((current) => {
+      if (current && nextInspection.executables.includes(current)) {
+        return current;
+      }
+
+      return nextInspection.executables[0] || "";
+    });
   }
 
   useEffect(() => {
@@ -240,7 +269,7 @@ function App() {
   }
 
   async function runValgrindTarget() {
-    if (!selectedEnvironment || !selectedValgrindTarget) {
+    if (!selectedEnvironment || !activeValgrindTarget) {
       setError("Sélectionne un binaire Valgrind.");
       return;
     }
@@ -252,13 +281,38 @@ function App() {
     try {
       const response = await invoke<string>("run_environment_valgrind_target", {
         environmentId: selectedEnvironment.id,
-        targetPath: selectedValgrindTarget,
+        targetPath: activeValgrindTarget,
       });
       await refreshEvaluation(selectedEnvironment.id);
       setMessage(response);
     } catch (caught) {
       setError(String(caught));
       setMessage("Valgrind interrompu.");
+    } finally {
+      setBusyCommand(null);
+    }
+  }
+
+  async function runFullEvaluation() {
+    if (!selectedEnvironment) {
+      setError("Sélectionne un environnement avant de lancer l'évaluation complète.");
+      return;
+    }
+
+    setBusyCommand("run_full_evaluation");
+    setError(null);
+    setMessage("Évaluation complète en cours...");
+
+    try {
+      const response = await invoke<string>("run_full_evaluation", {
+        environmentId: selectedEnvironment.id,
+        targetPath: activeValgrindTarget || null,
+      });
+      await refreshEvaluation(selectedEnvironment.id);
+      setMessage(response);
+    } catch (caught) {
+      setError(String(caught));
+      setMessage("Évaluation complète interrompue.");
     } finally {
       setBusyCommand(null);
     }
@@ -458,26 +512,29 @@ function App() {
         <section className="evaluation-grid" aria-label="Evaluation core">
           <div className="mini-panel">
             <h3>Evaluation</h3>
-            <p>Makefile: {inspection?.has_makefile ? "détecté" : "absent"}</p>
-            <p>Targets: {inspection?.make_targets.join(", ") || "aucune"}</p>
+            <p>Makefile: {activeInspection?.has_makefile ? "détecté" : "absent"}</p>
+            <p>Targets: {activeInspection?.make_targets.join(", ") || "aucune"}</p>
             <div className="panel-actions">
               <button className="action-button secondary" disabled={!selectedEnvironment || busyCommand !== null} onClick={() => runCommand("run_environment_build")} type="button">Build</button>
               <button className="action-button secondary" disabled={!selectedEnvironment || busyCommand !== null} onClick={() => runCommand("run_environment_tests")} type="button">Tests</button>
               <button className="action-button secondary" disabled={!selectedEnvironment || busyCommand !== null} onClick={() => runCommand("run_environment_clean")} type="button">Clean</button>
+              <button className="action-button primary" disabled={!selectedEnvironment || busyCommand !== null} onClick={runFullEvaluation} type="button">
+                {busyCommand === "run_full_evaluation" ? "Évaluation..." : "Run full evaluation"}
+              </button>
             </div>
             <label className="compact-label">
               Valgrind target
-              <select value={selectedValgrindTarget} onChange={(event) => setSelectedValgrindTarget(event.target.value)}>
+              <select value={activeValgrindTarget} onChange={(event) => setSelectedValgrindTarget(event.target.value)}>
                 <option value="">Aucun binaire</option>
-                {(inspection?.executables ?? []).map((binary) => <option key={binary} value={binary}>{binary}</option>)}
+                {(activeInspection?.executables ?? []).map((binary) => <option key={binary} value={binary}>{binary}</option>)}
               </select>
             </label>
-            <button className="action-button secondary" disabled={!selectedValgrindTarget || busyCommand !== null} onClick={runValgrindTarget} type="button">Run Valgrind</button>
+            <button className="action-button secondary" disabled={!activeValgrindTarget || busyCommand !== null} onClick={runValgrindTarget} type="button">Run Valgrind</button>
           </div>
 
           <div className="mini-panel">
             <h3>History</h3>
-            {history.length === 0 ? <p>Aucun run enregistré.</p> : history.slice(0, 6).map((run) => (
+            {activeHistory.length === 0 ? <p>Aucun run enregistré.</p> : activeHistory.slice(0, 6).map((run) => (
               <div className="history-row" key={run.id}>
                 <strong>{run.command}</strong>
                 <span>{run.success ? "OK" : "FAIL"} · {run.duration_ms}ms</span>
@@ -492,10 +549,10 @@ function App() {
               <button className="action-button secondary" disabled={!selectedEnvironment || busyCommand !== null} onClick={generateReport} type="button">
                 {busyCommand === "generate_evaluation_report" ? "Génération..." : "Generate report"}
               </button>
-              <button className="action-button secondary" disabled={!selectedEnvironment || reports.length === 0 || busyCommand !== null} onClick={() => openReport(reports[0].name)} type="button">Open latest</button>
+              <button className="action-button secondary" disabled={!selectedEnvironment || activeReports.length === 0 || busyCommand !== null} onClick={() => openReport(activeReports[0].name)} type="button">Open latest</button>
               <button className="action-button secondary" disabled={!selectedEnvironment || busyCommand !== null} onClick={openReportFolder} type="button">Open folder</button>
             </div>
-            {reports.length === 0 ? <p>Aucun rapport généré.</p> : reports.slice(0, 5).map((report) => (
+            {activeReports.length === 0 ? <p>Aucun rapport généré.</p> : activeReports.slice(0, 5).map((report) => (
               <button className="report-row" key={report.name} onClick={() => openReport(report.name)} type="button">
                 <strong>{report.name}</strong>
                 <span>{Math.max(1, Math.round(report.size_bytes / 1024))} KB</span>
@@ -505,9 +562,9 @@ function App() {
 
           <div className="mini-panel">
             <h3>Artifacts</h3>
-            <p>Langages: {inspection ? Object.entries(inspection.language_counts).map(([name, count]) => `${name}:${count}`).join(" · ") || "aucun" : "-"}</p>
-            <p>Binaires: {(inspection?.executables ?? []).join(", ") || "aucun"}</p>
-            <p>Fichiers: {(inspection?.artifacts ?? []).join(", ") || "aucun"}</p>
+            <p>Langages: {activeInspection ? Object.entries(activeInspection.language_counts).map(([name, count]) => `${name}:${count}`).join(" · ") || "aucun" : "-"}</p>
+            <p>Binaires: {(activeInspection?.executables ?? []).join(", ") || "aucun"}</p>
+            <p>Fichiers: {(activeInspection?.artifacts ?? []).join(", ") || "aucun"}</p>
           </div>
 
           <div className="mini-panel docker-panel">

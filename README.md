@@ -107,6 +107,7 @@ Deleting an environment removes `~/.codeharbor/environments/<environment-id>/` b
 - `Tests`: runs `make tests_run` in `/workspace`.
 - `Clean`: runs `make fclean` and `make clean` when available.
 - `Run Valgrind`: runs Valgrind against the selected detected executable.
+- `Run full evaluation`: runs Clean, Build, then Tests and optional Valgrind if Build succeeds, then generates a Markdown report.
 
 The Evaluation panels show:
 
@@ -124,6 +125,10 @@ Generate reports from the `Reports` panel. Reports are written to:
 ```
 
 Reports include environment metadata, project inspection, evaluation history, command outputs, Valgrind entries, Docker config/logs, and manual review notes. They are supporting evidence, not an automated grade.
+
+## Sample Project
+
+Use `fixtures/epitech-c-sample/` to smoke-test CodeHarbor without a student project. Create an environment from that folder, start it, then run `Run full evaluation`.
 
 ## Validate The Project
 

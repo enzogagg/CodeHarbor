@@ -94,6 +94,8 @@ Frontend coverage in this batch is TypeScript and Vite build validation. There i
 
 ## Manual Verification Checklist
 
+To smoke-test quickly, create an environment from `fixtures/epitech-c-sample/`, start it, run `Run full evaluation`, and confirm a report appears.
+
 Use this checklist when validating features that require Docker or macOS UI integration:
 
 1. Run `npm run tauri:dev`.
