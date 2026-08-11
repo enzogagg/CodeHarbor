@@ -12,6 +12,8 @@ CodeHarbor is a macOS desktop app for creating and running Ubuntu AMD64 Docker w
 - Records evaluation history and generates Markdown evaluation reports.
 - Keeps student/project files when deleting generated CodeHarbor environments.
 
+The workspace image includes SFML and CSFML development packages for Ubuntu AMD64 projects, plus `xvfb` for headless smoke tests.
+
 ## Requirements
 
 - macOS
@@ -126,9 +128,15 @@ Generate reports from the `Reports` panel. Reports are written to:
 
 Reports include environment metadata, project inspection, evaluation history, command outputs, Valgrind entries, Docker config/logs, and manual review notes. They are supporting evidence, not an automated grade.
 
-## Sample Project
+## Sample Projects
 
-Use `fixtures/epitech-c-sample/` to smoke-test CodeHarbor without a student project. Create an environment from that folder, start it, then run `Run full evaluation`.
+Use these fixtures to smoke-test CodeHarbor without a student project:
+
+- `fixtures/epitech-c-sample/`: basic Epitech-style C project.
+- `fixtures/sfml-cpp-sample/`: C++ SFML project that launches under `xvfb-run`.
+- `fixtures/csfml-c-sample/`: C CSFML project that launches under `xvfb-run`.
+
+Create an environment from a fixture folder, start it, then run `Run full evaluation`. The SFML and CSFML fixtures validate compilation and headless launch, not full interactive graphics behavior.
 
 ## Validate The Project
 

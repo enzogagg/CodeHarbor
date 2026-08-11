@@ -96,6 +96,13 @@ Frontend coverage in this batch is TypeScript and Vite build validation. There i
 
 To smoke-test quickly, create an environment from `fixtures/epitech-c-sample/`, start it, run `Run full evaluation`, and confirm a report appears.
 
+For SFML/CSFML completion validation:
+
+1. Rebuild or recreate the workspace image after editing `prototype/docker-workspace/Dockerfile`.
+2. Create an environment from `fixtures/sfml-cpp-sample/`, start it, run `Run full evaluation`, and confirm a report appears.
+3. Create an environment from `fixtures/csfml-c-sample/`, start it, run `Run full evaluation`, and confirm a report appears.
+4. Treat these as headless launch smoke tests, not full interactive graphics tests.
+
 Use this checklist when validating features that require Docker or macOS UI integration:
 
 1. Run `npm run tauri:dev`.

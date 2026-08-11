@@ -17,6 +17,9 @@ RUN apt-get update && apt-get install -y \
     git \
     gnupg \
     lcov \
+    libcsfml-dev \
+    libsfml-dev \
+    mesa-utils \
     nano \
     openssh-client \
     pkg-config \
@@ -29,6 +32,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     valgrind \
     wget \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd \
