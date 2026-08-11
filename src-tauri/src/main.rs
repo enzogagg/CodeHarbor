@@ -669,7 +669,7 @@ if [ "$count" = "0" ]; then \
 elif [ "$count" = "1" ]; then \
   target=$(printf '%s\n' "$executables" | sed '/^$/d' | head -n 1); \
   printf 'Valgrind target: %s\n' "$target"; \
-  valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes "$target"; \
+  xvfb-run -a valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes "$target"; \
 else \
   printf 'Valgrind: plusieurs exécutables possibles. Ouvre le terminal et lance valgrind sur le bon binaire:\n%s\n' "$executables"; \
 fi"#
@@ -677,7 +677,7 @@ fi"#
 
 fn valgrind_target_script(target_path: &str) -> String {
     format!(
-        "cd /workspace && valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./{}",
+        "cd /workspace && xvfb-run -a valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./{}",
         target_path.replace('"', "\\\"")
     )
 }
@@ -2131,7 +2131,9 @@ mod tests {
     }
 
     mod evaluation_command_tests {
-        use super::super::{build_script, clean_script, tests_script, valgrind_script};
+        use super::super::{
+            build_script, clean_script, tests_script, valgrind_script, valgrind_target_script,
+        };
 
         #[test]
         fn build_script_runs_make_in_workspace() {
@@ -2155,6 +2157,12 @@ mod tests {
         fn valgrind_script_lists_executables_when_target_is_ambiguous() {
             assert!(valgrind_script().contains("find . -maxdepth 2 -type f -perm -111"));
             assert!(valgrind_script().contains("Valgrind: plusieurs exécutables possibles"));
+        }
+
+        #[test]
+        fn valgrind_scripts_run_under_virtual_x_server() {
+            assert!(valgrind_script().contains("xvfb-run -a"));
+            assert!(valgrind_target_script("my_hunter").contains("xvfb-run -a"));
         }
     }
 }
