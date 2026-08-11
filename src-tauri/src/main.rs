@@ -246,6 +246,7 @@ fn list_report_files(environment_id: &str) -> Result<Vec<ReportFile>, String> {
 
 const COMMAND_OUTPUT_REPORT_LIMIT: usize = 4_000;
 const DOCKER_REPORT_LIMIT: usize = 8_000;
+const WORKSPACE_DOCKERFILE: &str = include_str!("../../prototype/docker-workspace/Dockerfile");
 
 fn truncate_block(input: &str, limit: usize) -> String {
     if input.chars().count() <= limit {
@@ -585,14 +586,8 @@ fn write_environment_files(config: &EnvironmentConfig) -> Result<(), String> {
     fs::create_dir_all(&env_dir)
         .map_err(|error| format!("Impossible de créer {}: {error}", env_dir.display()))?;
 
-    let root = repo_root()?;
-    let source_dockerfile = prototype_dir_from_root(&root)?.join("Dockerfile");
-    fs::copy(&source_dockerfile, env_dir.join("Dockerfile")).map_err(|error| {
-        format!(
-            "Impossible de copier {}: {error}",
-            source_dockerfile.display()
-        )
-    })?;
+    fs::write(env_dir.join("Dockerfile"), WORKSPACE_DOCKERFILE)
+        .map_err(|error| format!("Impossible d'écrire Dockerfile: {error}"))?;
 
     fs::write(env_dir.join("compose.yaml"), compose_yaml(config))
         .map_err(|error| format!("Impossible d'écrire compose.yaml: {error}"))?;
@@ -1575,8 +1570,8 @@ mod tests {
         repo_root_from_current_dir, reports_dir, run_full_evaluation_inner,
         sanitize_environment_id, select_available_port, should_stop_full_evaluation_after_step,
         truncate_block, validate_report_name, validate_workspace_relative_path,
-        write_history_record, EnvironmentConfig, EvaluationRunRecord, FullEvaluationStep,
-        ProjectInspection, ReportFile,
+        write_environment_files, write_history_record, EnvironmentConfig, EvaluationRunRecord,
+        FullEvaluationStep, ProjectInspection, ReportFile,
     };
 
     #[test]
@@ -1907,6 +1902,42 @@ mod tests {
         assert!(markdown.contains("## Docker"));
 
         std::fs::remove_dir_all(env_dir).expect("clean env dir");
+    }
+
+    #[test]
+    fn write_environment_files_uses_embedded_workspace_dockerfile() {
+        let environment_id = format!("embedded-dockerfile-test-{}", std::process::id());
+        let env_dir = environment_dir(&environment_id).expect("resolve env dir");
+        let workspace = std::env::temp_dir().join(format!(
+            "codeharbor-embedded-workspace-{}",
+            std::process::id()
+        ));
+
+        std::fs::create_dir_all(&workspace).expect("create workspace dir");
+
+        let config = EnvironmentConfig {
+            id: environment_id.clone(),
+            name: "Embedded Dockerfile Test".into(),
+            profile: "epitech-cpp".into(),
+            host_path: workspace.to_string_lossy().into_owned(),
+            container_path: "/workspace".into(),
+            ide_port: 8080,
+            created_at: 1,
+        };
+
+        let original_dir = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir("/").expect("simulate installed app cwd");
+        let result = write_environment_files(&config);
+        std::env::set_current_dir(original_dir).expect("restore current dir");
+
+        result.expect("write environment files from installed app cwd");
+        let dockerfile = std::fs::read_to_string(env_dir.join("Dockerfile")).expect("read Dockerfile");
+
+        assert!(dockerfile.contains("FROM ubuntu:24.04"));
+        assert!(dockerfile.contains("libsfml-dev"));
+
+        std::fs::remove_dir_all(env_dir).expect("clean env dir");
+        std::fs::remove_dir_all(workspace).expect("clean workspace dir");
     }
 
     #[test]
