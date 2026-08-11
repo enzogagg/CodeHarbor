@@ -713,8 +713,67 @@ fn relative_display_path(root: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+fn is_plausible_executable_path(path: &Path) -> bool {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(
+        file_name.as_str(),
+        "makefile" | "readme" | "readme.md" | "dockerfile"
+    ) {
+        return false;
+    }
+
+    let Some(extension) = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+    else {
+        return true;
+    };
+
+    !matches!(
+        extension.as_str(),
+        "a"
+            | "c"
+            | "cc"
+            | "cpp"
+            | "cxx"
+            | "gcda"
+            | "gcno"
+            | "gcov"
+            | "h"
+            | "hpp"
+            | "jpeg"
+            | "jpg"
+            | "js"
+            | "json"
+            | "log"
+            | "md"
+            | "o"
+            | "ogg"
+            | "png"
+            | "py"
+            | "rs"
+            | "so"
+            | "toml"
+            | "ttf"
+            | "ts"
+            | "txt"
+            | "wav"
+            | "yaml"
+            | "yml"
+    )
+}
+
 fn is_executable_file(path: &Path) -> bool {
     if !path.is_file() {
+        return false;
+    }
+
+    if !is_plausible_executable_path(path) {
         return false;
     }
 
@@ -1954,10 +2013,14 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("codeharbor-project-detect-{}", std::process::id()));
         let binary = root.join("my_binary");
+        let makefile = root.join("Makefile");
+        let asset_dir = root.join("da");
+        let asset = asset_dir.join("Back.png");
 
         std::fs::create_dir_all(&root).expect("create project dir");
+        std::fs::create_dir_all(&asset_dir).expect("create asset dir");
         std::fs::write(
-            root.join("Makefile"),
+            &makefile,
             "all:\n\tcc main.c\nclean:\n\trm -f my_binary\ntests_run:\n\ttrue\n",
         )
         .expect("write Makefile");
@@ -1965,6 +2028,7 @@ mod tests {
             .expect("write C source");
         std::fs::write(root.join("main.cpp"), "int main() { return 0; }\n")
             .expect("write C++ source");
+        std::fs::write(&asset, "png\n").expect("write asset");
         std::fs::write(root.join("main.gcov"), "coverage\n").expect("write artifact");
         std::fs::write(&binary, "binary\n").expect("write binary");
 
@@ -1974,6 +2038,14 @@ mod tests {
             let mut permissions = std::fs::metadata(&binary).expect("metadata").permissions();
             permissions.set_mode(0o755);
             std::fs::set_permissions(&binary, permissions).expect("set executable");
+
+            let mut permissions = std::fs::metadata(&makefile).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&makefile, permissions).expect("chmod Makefile");
+
+            let mut permissions = std::fs::metadata(&asset).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&asset, permissions).expect("chmod asset");
         }
 
         let inspection = detect_project(&root).expect("detect project");
@@ -1985,6 +2057,8 @@ mod tests {
         assert_eq!(inspection.language_counts.get("c"), Some(&1));
         assert_eq!(inspection.language_counts.get("cpp"), Some(&1));
         assert!(inspection.executables.contains(&"my_binary".into()));
+        assert!(!inspection.executables.contains(&"Makefile".into()));
+        assert!(!inspection.executables.contains(&"da/Back.png".into()));
         assert!(inspection.artifacts.contains(&"main.gcov".into()));
 
         std::fs::remove_dir_all(root).expect("clean project dir");
