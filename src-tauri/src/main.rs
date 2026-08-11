@@ -169,6 +169,10 @@ fn environment_config_path(environment_id: &str) -> Result<PathBuf, String> {
     Ok(environment_dir(environment_id)?.join("config.json"))
 }
 
+fn environment_is_configured(environment_id: &str) -> Result<bool, String> {
+    Ok(environment_config_path(environment_id)?.is_file())
+}
+
 fn history_dir(environment_id: &str) -> Result<PathBuf, String> {
     Ok(environment_dir(environment_id)?.join("history"))
 }
@@ -1196,8 +1200,7 @@ async fn create_environment(
             return Err("Nom d'environnement invalide".into());
         }
 
-        let env_dir = environment_dir(&id)?;
-        if env_dir.exists() {
+        if environment_is_configured(&id)? {
             return Err(format!("Un environnement existe déjà: {id}"));
         }
 
@@ -1565,8 +1568,9 @@ async fn run_full_evaluation(
 mod tests {
     use super::{
         compose_yaml, container_name, delete_environment_files, detect_project,
-        environment_config_path, environment_dir, environment_status_from_docker_status,
-        format_command_result, format_full_evaluation_summary, generate_report_file,
+        environment_config_path, environment_dir, environment_is_configured,
+        environment_status_from_docker_status, format_command_result,
+        format_full_evaluation_summary, generate_report_file,
         list_report_files, prototype_dir_from_root, read_history_records, render_evaluation_report,
         repo_root_from_current_dir, reports_dir, run_full_evaluation_inner,
         sanitize_environment_id, select_available_port, should_stop_full_evaluation_after_step,
@@ -1615,6 +1619,18 @@ mod tests {
             sanitize_environment_id("My FTP / Student #42"),
             "my-ftp-student-42"
         );
+    }
+
+    #[test]
+    fn orphan_environment_directory_does_not_count_as_existing_environment() {
+        let environment_id = format!("orphan-env-{}", std::process::id());
+        let env_dir = environment_dir(&environment_id).expect("resolve environment dir");
+
+        std::fs::create_dir_all(&env_dir).expect("create orphan environment dir");
+
+        assert!(!environment_is_configured(&environment_id).expect("check environment"));
+
+        std::fs::remove_dir_all(env_dir).expect("clean env dir");
     }
 
     #[test]
