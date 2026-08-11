@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import codeharborLogo from "./assets/codeharbor-logo.svg";
 
 type EnvironmentConfig = {
@@ -206,6 +207,21 @@ function App() {
       setMessage("Création interrompue.");
     } finally {
       setBusyCommand(null);
+    }
+  }
+
+  async function pickLocalFolder() {
+    setError(null);
+
+    try {
+      const selected = await open({ directory: true, multiple: false, title: "Choose project folder" });
+      if (typeof selected === "string") {
+        setHostPath(selected);
+        setMessage("Dossier local sélectionné.");
+      }
+    } catch (caught) {
+      setError(String(caught));
+      setMessage("Sélection du dossier interrompue.");
     }
   }
 
@@ -436,7 +452,10 @@ function App() {
           </label>
           <label>
             Local folder path
-            <input value={hostPath} onChange={(event) => setHostPath(event.target.value)} placeholder="/Users/me/Dev/myftp" />
+            <span className="folder-picker-row">
+              <input value={hostPath} onChange={(event) => setHostPath(event.target.value)} placeholder="/Users/me/Dev/myftp" />
+              <button className="small-button" disabled={busyCommand !== null} onClick={pickLocalFolder} type="button">Choose...</button>
+            </span>
           </label>
           <label>
             Git URL optional
