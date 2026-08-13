@@ -427,20 +427,26 @@ function App() {
           {environments.length === 0 ? (
             <p className="empty-sidebar">Aucun environnement.</p>
           ) : (
-            environments.map((environment) => (
-              <button
-                className={`workspace-nav-item ${selectedEnvironment?.id === environment.id ? "active" : ""}`}
-                key={environment.id}
-                onClick={() => { setSelectedId(environment.id); setPendingDeleteId(null); }}
-                type="button"
-              >
-                <span className="workspace-glyph" aria-hidden="true">▣</span>
-                <span>
-                  <strong>{environment.name}</strong>
-                  <small>{environment.profile} · {environment.ide_port} · {statusLabels[runtimeStatuses[environment.id]?.status ?? "not_created"]}</small>
-                </span>
-              </button>
-            ))
+            environments.map((environment) => {
+              const environmentStatus = runtimeStatuses[environment.id]?.status ?? "not_created";
+
+              return (
+                <button
+                  className={`workspace-nav-item ${selectedEnvironment?.id === environment.id ? "active" : ""}`}
+                  key={environment.id}
+                  onClick={() => { setSelectedId(environment.id); setPendingDeleteId(null); }}
+                  type="button"
+                >
+                  <span className={`workspace-status-badge ${environmentStatus}`}>
+                    {statusLabels[environmentStatus] ?? environmentStatus}
+                  </span>
+                  <span className="workspace-nav-copy">
+                    <strong>{environment.name}</strong>
+                    <small>{environment.profile} · {environment.ide_port}</small>
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
 
