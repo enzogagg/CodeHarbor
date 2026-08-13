@@ -287,10 +287,14 @@ h1 {
 }
 
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 24px;
+}
+
+.workspace-heading {
+  min-width: 0;
 }
 
 .breadcrumb {
@@ -321,9 +325,34 @@ h2 {
   font-size: 0.9em;
 }
 
+.workspace-path-card {
+  display: grid;
+  gap: 4px;
+  max-width: min(680px, 100%);
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(28, 28, 30, 0.42);
+}
+
+.workspace-path-card span,
+.workspace-path-card small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.workspace-path-card code {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .topbar-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(160px, max-content));
+  grid-template-columns: repeat(3, minmax(128px, max-content));
   justify-content: flex-end;
   gap: 12px 14px;
   padding-top: 4px;

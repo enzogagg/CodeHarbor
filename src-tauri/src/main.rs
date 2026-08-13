@@ -15,6 +15,8 @@ struct EnvironmentConfig {
     host_path: String,
     container_path: String,
     ide_port: u16,
+    #[serde(default = "default_preview_port")]
+    preview_port: u16,
     created_at: u64,
 }
 
@@ -52,6 +54,10 @@ struct ReportFile {
     path: String,
     created_at: u64,
     size_bytes: u64,
+}
+
+fn default_preview_port() -> u16 {
+    6080
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -522,6 +528,16 @@ fn next_available_ide_port(exclude_environment_id: Option<&str>) -> Result<u16, 
     select_available_port(8080, &used_ports, is_local_port_available)
 }
 
+fn next_available_preview_port(exclude_environment_id: Option<&str>) -> Result<u16, String> {
+    let used_ports = list_environment_configs()?
+        .into_iter()
+        .filter(|config| Some(config.id.as_str()) != exclude_environment_id)
+        .map(|config| config.preview_port)
+        .collect::<Vec<_>>();
+
+    select_available_port(6080, &used_ports, is_local_port_available)
+}
+
 fn write_environment_config(config: &EnvironmentConfig) -> Result<(), String> {
     let path = environment_config_path(&config.id)?;
     let json = serde_json::to_string_pretty(config)
@@ -545,6 +561,7 @@ fn compose_yaml(config: &EnvironmentConfig) -> String {
 
     ports:
       - "127.0.0.1:{ide_port}:8080"
+      - "127.0.0.1:{preview_port}:6080"
 
     volumes:
       - "{host_path}:/workspace"
@@ -555,6 +572,7 @@ fn compose_yaml(config: &EnvironmentConfig) -> String {
     environment:
       PASSWORD: dev
       DEFAULT_WORKSPACE: /workspace
+      DISPLAY: :99
       HISTFILE: /command-history/.bash_history
 
     working_dir: /workspace
@@ -568,6 +586,7 @@ volumes:
 "#,
         id = config.id,
         ide_port = config.ide_port,
+        preview_port = config.preview_port,
         host_path = config.host_path.replace('"', "\\\"")
     )
 }
@@ -578,6 +597,12 @@ fn read_environment_config(environment_id: &str) -> Result<EnvironmentConfig, St
         .map_err(|error| format!("Impossible de lire {}: {error}", path.display()))?;
 
     serde_json::from_str(&data)
+        .map(|mut config: EnvironmentConfig| {
+            if config.preview_port == default_preview_port() && config.ide_port != 8080 {
+                config.preview_port = config.ide_port.saturating_sub(2000);
+            }
+            config
+        })
         .map_err(|error| format!("Configuration invalide {}: {error}", path.display()))
 }
 
@@ -654,6 +679,26 @@ fn tests_script() -> &'static str {
 
 fn clean_script() -> &'static str {
     "cd /workspace && (make fclean || true) && (make clean || true)"
+}
+
+fn graphical_preview_script() -> &'static str {
+    r#"set -eu
+mkdir -p /tmp/codeharbor-preview
+if ! pgrep -f 'Xvfb :99' >/dev/null 2>&1; then
+  Xvfb :99 -screen 0 1280x800x24 -nolisten tcp >/tmp/codeharbor-preview/xvfb.log 2>&1 &
+fi
+export DISPLAY=:99
+if ! pgrep -f 'openbox' >/dev/null 2>&1; then
+  openbox >/tmp/codeharbor-preview/openbox.log 2>&1 &
+fi
+if ! pgrep -f 'x11vnc.*:99' >/dev/null 2>&1; then
+  x11vnc -display :99 -forever -shared -nopw -listen 127.0.0.1 -rfbport 5900 >/tmp/codeharbor-preview/x11vnc.log 2>&1 &
+fi
+if ! pgrep -f 'websockify.*6080' >/dev/null 2>&1; then
+  websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900 >/tmp/codeharbor-preview/novnc.log 2>&1 &
+fi
+printf 'Graphical preview ready. Run graphical apps with: DISPLAY=:99 ./your_binary\n'
+"#
 }
 
 fn valgrind_script() -> &'static str {
@@ -1315,6 +1360,7 @@ async fn create_environment(
             host_path: final_host_path.to_string_lossy().to_string(),
             container_path: "/workspace".into(),
             ide_port: next_available_ide_port(None)?,
+            preview_port: next_available_preview_port(None)?,
             created_at: created_at_now()?,
         };
 
@@ -1432,6 +1478,10 @@ async fn start_environment(environment_id: String) -> Result<String, String> {
             config.ide_port = next_available_ide_port(Some(&environment_id))?;
             write_environment_files(&config)?;
         }
+        if !is_local_port_available(config.preview_port) {
+            config.preview_port = next_available_preview_port(Some(&environment_id))?;
+        }
+        write_environment_files(&config)?;
 
         run_environment_compose(
             &environment_id,
@@ -1440,8 +1490,8 @@ async fn start_environment(environment_id: String) -> Result<String, String> {
         )?;
         let config = read_environment_config(&environment_id)?;
         Ok(format!(
-            "{} démarré. IDE: http://localhost:{}",
-            config.name, config.ide_port
+            "{} démarré. IDE: http://localhost:{} · Preview: http://localhost:{}/vnc.html",
+            config.name, config.ide_port, config.preview_port
         ))
     })
     .await
@@ -1480,6 +1530,19 @@ fn open_filesystem_path(path: &Path) -> Result<(), String> {
 
     #[cfg(all(unix, not(target_os = "macos")))]
     let result = run_command("open path", "xdg-open", &[path_string.as_str()], None);
+
+    result.map(|_| ())
+}
+
+fn open_url(label: &str, url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let result = run_command(label, "open", &[url], None);
+
+    #[cfg(target_os = "windows")]
+    let result = run_command(label, "cmd", &["/C", "start", url], None);
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let result = run_command(label, "xdg-open", &[url], None);
 
     result.map(|_| ())
 }
@@ -1523,16 +1586,41 @@ async fn open_environment_ide(environment_id: String) -> Result<String, String> 
         let config = read_environment_config(&environment_id)?;
         let url = format!("http://localhost:{}", config.ide_port);
 
-        #[cfg(target_os = "macos")]
-        let result = run_command("open IDE", "open", &[url.as_str()], None);
+        open_url("open IDE", &url).map(|_| format!("IDE ouvert: {url}"))
+    })
+    .await
+}
 
-        #[cfg(target_os = "windows")]
-        let result = run_command("open IDE", "cmd", &["/C", "start", url.as_str()], None);
+#[tauri::command]
+async fn open_graphical_preview(environment_id: String) -> Result<String, String> {
+    run_blocking_task(move || {
+        let config = read_environment_config(&environment_id)?;
+        write_environment_files(&config)?;
+        run_environment_compose(
+            &environment_id,
+            "docker compose up",
+            &["compose", "up", "--build", "-d"],
+        )?;
+        run_environment_compose(
+            &environment_id,
+            "start graphical preview",
+            &[
+                "compose",
+                "exec",
+                "-T",
+                "workspace",
+                "bash",
+                "-lc",
+                graphical_preview_script(),
+            ],
+        )?;
 
-        #[cfg(all(unix, not(target_os = "macos")))]
-        let result = run_command("open IDE", "xdg-open", &[url.as_str()], None);
-
-        result.map(|_| format!("IDE ouvert: {url}"))
+        let url = format!("http://localhost:{}/vnc.html", config.preview_port);
+        open_url("open graphical preview", &url).map(|_| {
+            format!(
+                "Preview graphique ouverte: {url}\nDans le terminal IDE, lance: DISPLAY=:99 ./ton_binaire"
+            )
+        })
     })
     .await
 }
@@ -1891,6 +1979,7 @@ mod tests {
             host_path: "/tmp/report-render-test".into(),
             container_path: "/workspace".into(),
             ide_port: 8080,
+            preview_port: 6080,
             created_at: 1,
         };
         let inspection = Ok(ProjectInspection {
@@ -1947,6 +2036,7 @@ mod tests {
             host_path: project_dir.to_string_lossy().into_owned(),
             container_path: "/workspace".into(),
             ide_port: 8080,
+            preview_port: 6080,
             created_at: 1,
         };
         std::fs::create_dir_all(&env_dir).expect("create env dir");
@@ -1986,6 +2076,7 @@ mod tests {
             host_path: workspace.to_string_lossy().into_owned(),
             container_path: "/workspace".into(),
             ide_port: 8080,
+            preview_port: 6080,
             created_at: 1,
         };
 
@@ -2078,6 +2169,7 @@ mod tests {
             host_path: "/Users/me/projects/myftp".into(),
             container_path: "/workspace".into(),
             ide_port: 8083,
+            preview_port: 6083,
             created_at: 1,
         };
 
@@ -2085,6 +2177,8 @@ mod tests {
 
         assert!(compose.contains("container_name: codeharbor-my-ftp"));
         assert!(compose.contains("127.0.0.1:8083:8080"));
+        assert!(compose.contains("127.0.0.1:6083:6080"));
+        assert!(compose.contains("DISPLAY: :99"));
         assert!(compose.contains("\"/Users/me/projects/myftp:/workspace\""));
     }
 
@@ -2137,7 +2231,8 @@ mod tests {
 
     mod evaluation_command_tests {
         use super::super::{
-            build_script, clean_script, tests_script, valgrind_script, valgrind_target_script,
+            build_script, clean_script, graphical_preview_script, tests_script, valgrind_script,
+            valgrind_target_script,
         };
 
         #[test]
@@ -2181,6 +2276,17 @@ mod tests {
             assert!(valgrind_script().contains("Valgrind: timeout après 15s"));
             assert!(valgrind_target_script("my_hunter").contains("Valgrind: timeout après 15s"));
         }
+
+        #[test]
+        fn graphical_preview_script_starts_virtual_display_and_novnc() {
+            let script = graphical_preview_script();
+
+            assert!(script.contains("Xvfb :99"));
+            assert!(script.contains("openbox"));
+            assert!(script.contains("x11vnc"));
+            assert!(script.contains("websockify"));
+            assert!(script.contains("/usr/share/novnc"));
+        }
     }
 }
 
@@ -2212,6 +2318,7 @@ fn main() {
             open_report_file,
             open_report_folder,
             open_environment_ide,
+            open_graphical_preview,
             open_environment_folder,
             run_environment_build,
             run_environment_tests,

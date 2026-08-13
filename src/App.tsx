@@ -10,6 +10,7 @@ type EnvironmentConfig = {
   host_path: string;
   container_path: string;
   ide_port: number;
+  preview_port: number;
   created_at: number;
 };
 
@@ -50,6 +51,7 @@ type CommandName =
   | "stop_environment"
   | "delete_environment"
   | "open_environment_ide"
+  | "open_graphical_preview"
   | "open_environment_folder"
   | "run_environment_build"
   | "run_environment_tests"
@@ -69,6 +71,7 @@ const actionGroups: Array<{ title: string; actions: Action[] }> = [
       { command: "start_environment", label: "Démarrer", kind: "primary", needsEnvironment: true },
       { command: "stop_environment", label: "Arrêter", kind: "secondary", needsEnvironment: true },
       { command: "open_environment_ide", label: "Ouvrir IDE", kind: "secondary", needsEnvironment: true },
+      { command: "open_graphical_preview", label: "Preview graphique", kind: "secondary", needsEnvironment: true },
     ],
   },
   {
@@ -475,14 +478,18 @@ function App() {
 
       <section className="content" aria-labelledby="workspace-title">
         <header className="topbar">
-          <div>
+          <div className="workspace-heading">
             <p className="breadcrumb">Evaluation profile</p>
             <h2 id="workspace-title">{selectedEnvironment?.name ?? "No environment selected"}</h2>
-            <p className="summary">
-              {selectedEnvironment
-                ? <>Ton dossier Mac <code>{selectedEnvironment.host_path}</code> est monté dans <code>/workspace</code>.</>
-                : "Crée un environnement depuis un dossier local ou une URL Git pour compiler dans Ubuntu AMD64."}
-            </p>
+            {selectedEnvironment ? (
+              <div className="workspace-path-card" title={selectedEnvironment.host_path}>
+                <span>Dossier Mac</span>
+                <code>{selectedEnvironment.host_path}</code>
+                <small>Monté dans /workspace · IDE {selectedEnvironment.ide_port} · Preview {selectedEnvironment.preview_port}</small>
+              </div>
+            ) : (
+              <p className="summary">Crée un environnement depuis un dossier local ou une URL Git pour compiler dans Ubuntu AMD64.</p>
+            )}
           </div>
 
           <div className="topbar-actions" aria-label="Workspace actions">
@@ -527,6 +534,7 @@ function App() {
             <div><dt>Base image</dt><dd>Ubuntu 24.04</dd></div>
             <div><dt>Architecture</dt><dd>x86_64 / linux amd64</dd></div>
             <div><dt>IDE URL</dt><dd>{selectedEnvironment ? `http://localhost:${selectedEnvironment.ide_port}` : "Not created"}</dd></div>
+            <div><dt>Preview URL</dt><dd>{selectedEnvironment ? `http://localhost:${selectedEnvironment.preview_port}/vnc.html` : "Not created"}</dd></div>
             <div><dt>Host folder</dt><dd>{selectedEnvironment?.host_path ?? "Select a local project"}</dd></div>
             <div><dt>Container mount</dt><dd>/workspace</dd></div>
             <div><dt>Container</dt><dd>{selectedEnvironment ? runtimeStatuses[selectedEnvironment.id]?.container_name ?? `codeharbor-${selectedEnvironment.id}` : "Not created"}</dd></div>

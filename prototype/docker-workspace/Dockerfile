@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y \
     libsfml-dev \
     mesa-utils \
     nano \
+    novnc \
+    openbox \
     openssh-client \
     pkg-config \
     python3 \
@@ -31,7 +33,9 @@ RUN apt-get update && apt-get install -y \
     tree \
     unzip \
     valgrind \
+    websockify \
     wget \
+    x11vnc \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
@@ -58,7 +62,7 @@ RUN mkdir -p \
 USER dev
 WORKDIR /workspace
 
-EXPOSE 8080 3000 5173 8000
+EXPOSE 8080 6080 3000 5173 8000
 
 CMD ["code-server", \
      "--bind-addr", "0.0.0.0:8080", \
